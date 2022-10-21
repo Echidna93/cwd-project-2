@@ -1,54 +1,3 @@
-library(sf)           
-library(terra)          
-library(RColorBrewer) 
-library(ggplot2)      
-library(reshape2)
-library(raster)
-library(dismo)
-library(resample)
-
-# source("individual.r")
-
-# lc=raster::raster("C:\\Users\\jackx\\OneDrive\\Desktop\\Langrange-Movement-R\\tcma_lc_finalv1\\tcma_lc_finalv1.tif")
-# # cropped.lc <- crop()
-# 
-# #rasterToPolygos(lc)
-# # pts <- sampleRast(lc, 1000)
-# # pts
-# # lc
-# # hist(lc)
-# 
-# # plot(lc)
-# xmax(lc)
-# 
-# b <- as(extent(500000, 510000, 5000000, 5010000), 'SpatialPolygons')
-# crs(b) <- crs(lc)
-# rb <- crop(lc, b)
-# 
-# plot(rb)
-# rb.df<-as.data.frame(rb)
-# writeRaster(rb,
-#             filename="C:\\Users\\jackx\\OneDrive\\Desktop\\Langrange-Movement-R\\tcma_lc_finalv1\\tcma_10000_by_10000_croppped.tif",
-#             overwrite=TRUE)
-            
-
-# b <- as(extent(507000, 508000, 5007000, 5008000), 'SpatialPolygons')
-# crs(b) <- crs(lc)
-# rb <- crop(lc, b)
-# writeRaster(rb,
-#                         filename="C:\\Users\\jackx\\OneDrive\\Desktop\\Langrange-Movement-R\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif",
-#                         overwrite=TRUE)
-# plot(rb)
-# rb.df<-as.data.frame(rb)
-
-# tclc.df<-as.data.frame(tc.lc.cropped)
-# 
-# tclc
-
-# lc.df<-as.data.frame(lc)
-# lc.df
-
-
 #' initiates a data frame of deer
 #' @param n_initial # number of individuals
 #' @param dim dimension of a vector for random assignment of location
@@ -86,18 +35,25 @@ make_inds <- function(n_initial,
 #' TODO implement sorting function
 #' @param 
 #' @export
-make_decision<-function(landscape, nbrs){
+make_decision<-function(landscape, nbrs, distance_vector){
   # assign decision to be the first element by default--make comparison
   decision_vec <- c()
+  if(binary){
+    i<-1
+    while(!is_habitat(landscape, nbrs[[i]][1], nbrs[[i]][2])){
+      #i<-round(runif(1, min=1, max=length(nbrs[1,])))
+      i<-i+1
+    }
+  }
+  else{
     #empty list to hold values of neighbors
     weights<-c()
     landscape_values<-c()
     for(i in 1:length(nbrs)){
       # append value of neighbor to weight vector
       landscape_values[i]<-landscape[nbrs[[i]][1],][nbrs[[i]][2]]
-      }
-    # weights <- landscape_values * distance_vector
-    weights <- landscape_values
+    }
+    weights <- landscape_values * distance_vector
     # weighted sample is a vector of the indices of nbrs weighted by
     # their corresponding values in the landscape matrix
     weighted_sample<-sample(c(1:length(nbrs)), size=100, replace=TRUE, prob=weights)
@@ -106,6 +62,7 @@ make_decision<-function(landscape, nbrs){
     # now we want to randomly sample from this list to get the index
     decision_val <- sample(weighted_sample, 1)
     decision_vec <- c(nbrs[[decision_val]][1], nbrs[[decision_val]][2])
+  }
   decision_vec
 }
 
@@ -152,48 +109,13 @@ get_distance_vector<-function(current_location, neighbors){
 #' Updates individual locations
 #' @param data_frame holds data about deer
 #' @export
-move<-function(inds.df, lc.rast){
-  # for(i in 1:nrow(data_frame)){
-  #   nbrs<-get_neighbors(c(data_frame[i,]$x,data_frame[i,]$y), nrow, ncol)
-  #   # distance_vector<-unlist(lapply(get_distance_vector(c(data_frame[i,]$x,data_frame[i,]$y), nbrs), get_inverse))
-  #   new_loc<-make_decision(landscape=landscape, nbrs=nbrs)
-  #   data_frame[i,]$x<-new_loc[[1]]
-  #   data_frame[i,]$y<-new_loc[[2]]
-  # }
-  
-  # grab the adjacent tiles (queens case)
-  nbrs <- adjacent(lc.rast, cellFromXY(lc.rast, c(inds.df$x, inds.df$y)), directions=8, pairs=TRUE)
-  xyFromCell(lc.rast, nbrs[sample(c(1:length(nbrs)), 1)])
+move<-function(data_frame, landscape, nrow, ncol){
+  for(i in 1:nrow(data_frame)){
+    nbrs<-get_neighbors(c(data_frame[i,]$x,data_frame[i,]$y), nrow, ncol)
+    distance_vector<-unlist(lapply(get_distance_vector(c(data_frame[i,]$x,data_frame[i,]$y), nbrs), get_inverse))
+    new_loc<-make_decision(landscape=landscape, nbrs=nbrs, binary, distance_vector)
+    data_frame[i,]$x<-new_loc[[1]]
+    data_frame[i,]$y<-new_loc[[2]]
+  }
+  data_frame
 }
-
-
-lc<-raster("C:\\Users\\jackx\\OneDrive\\Desktop\\cwd-project\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif")
-
-
-# inds<-make_inds(1,
-#           xmin(lc),
-#           xmax(lc),
-#           ymin(lc),
-#           ymax(lc),
-#           1)
-# write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
-# 
-# for(i in 1:1000){
-#   lc.mat<-as.matrix(lc)
-#   new.coord<-move(inds, lc)
-#   inds[1,]$x <- new.coord[1]
-#   inds[1,]$y <- new.coord[2]
-#   inds[1,]$time_step = inds[1,]$time_step+1
-#   write.table(inds,  "C:\\Users\\jackx\\Desktop\\deerdat.csv",
-#               row.names=FALSE, sep=",", append=TRUE, col.names=FALSE,
-#   )
-# }
-
-data<-read.csv("C:\\Users\\jackx\\Desktop\\deerdat.csv")
-lc.pts <- rasterToPoints(lc, spatial = TRUE)
-lc.df  <- data.frame(lc.pts)
-# set our column names to be something a bit more descriptive
-colnames(lc.df)<-c("cover_type", "x", "y", "optional")
-ggplot(data=lc.df, aes(x=x, y=y)) + 
-  geom_raster(aes(fill=cover_type)) + 
-  geom_point(data = data, aes(x = x, y = y, color = "red"))
