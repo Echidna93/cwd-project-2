@@ -72,7 +72,6 @@ make_inds <- function(n_initial,
 }
 
 
-
 lc<-raster("C:\\Users\\jackx\\OneDrive\\Desktop\\Langrange-Movement-R\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif")
 inds<-make_inds(100,
           xmin(lc),
@@ -80,10 +79,13 @@ inds<-make_inds(100,
           ymin(lc),
           ymax(lc),
           1)
+# note that in order to use ggplot with raster conversion is needed
+# first grab the points of the raster
 lc.pts <- rasterToPoints(lc, spatial = TRUE)
+# now throw those into a data frame
 lc.df  <- data.frame(lc_pts)
 # set our column names to be something a bit more descriptive
 colnames(lc.df)<-c("cover_type", "x", "y", "optional")
 ggplot(data=lc.df, aes(x=x, y=y)) + 
-  geom_raster(aes(fill=cover_type)) +
+  geom_raster(aes(fill=cover_type)) + # tell our aes to fill with raster data types
   geom_point(data=inds, aes(x=x, y=y, color="red"))
