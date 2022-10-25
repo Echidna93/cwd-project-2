@@ -80,56 +80,62 @@ make_inds <- function(n_initial,
   inds
 }
 
-#' Chooses best possible landscape component to move to
-#' TODO alter in the case of an make_decision being fed an empty list, make 
-#' else case
-#' TODO implement sorting function
-#' @param 
-#' @export
-make_decision<-function(landscape, nbrs){
-  # assign decision to be the first element by default--make comparison
-  decision_vec <- c()
-    #empty list to hold values of neighbors
-    weights<-c()
-    landscape_values<-c()
-    for(i in 1:length(nbrs)){
-      # append value of neighbor to weight vector
-      landscape_values[i]<-landscape[nbrs[[i]][1],][nbrs[[i]][2]]
-      }
-    # weights <- landscape_values * distance_vector
-    weights <- landscape_values
-    # weighted sample is a vector of the indices of nbrs weighted by
-    # their corresponding values in the landscape matrix
-    weighted_sample<-sample(c(1:length(nbrs)), size=100, replace=TRUE, prob=weights)
-    print(weighted_sample)
-    # print(weighted_sample)
-    # now we want to randomly sample from this list to get the index
-    decision_val <- sample(weighted_sample, 1)
-    decision_vec <- c(nbrs[[decision_val]][1], nbrs[[decision_val]][2])
-  decision_vec
-}
+#' #' Chooses best possible landscape component to move to
+#' #' TODO alter in the case of an make_decision being fed an empty list, make 
+#' #' else case
+#' #' TODO implement sorting function
+#' #' @param 
+#' #' @export
+#' make_decision<-function(landscape, nbrs){
+#'   # assign decision to be the first element by default--make comparison
+#'   decision_vec <- c()
+#'     #empty list to hold values of neighbors
+#'     weights<-c()
+#'     landscape_values<-c()
+#'     for(i in 1:length(nbrs)){
+#'       # append value of neighbor to weight vector
+#'       landscape_values[i]<-landscape[nbrs[[i]][1],][nbrs[[i]][2]]
+#'       }
+#'     # weights <- landscape_values * distance_vector
+#'     weights <- landscape_values
+#'     # weighted sample is a vector of the indices of nbrs weighted by
+#'     # their corresponding values in the landscape matrix
+#'     weighted_sample<-sample(c(1:length(nbrs)), size=100, replace=TRUE, prob=weights)
+#'     print(weighted_sample)
+#'     # print(weighted_sample)
+#'     # now we want to randomly sample from this list to get the index
+#'     decision_val <- sample(weighted_sample, 1)
+#'     decision_vec <- c(nbrs[[decision_val]][1], nbrs[[decision_val]][2])
+#'   decision_vec
+#' }
 
-#' Helper function
-#' returns neighborhood of cells as a list of vectors
-#' @param loc current coordinates of individual
-#' @param nrow # of rows in landscape matrix
-#' @param ncol # columns in landscape matrix
-#' @export
-get_neighbors<-function(loc, nrow, ncol){
-  k=1
-  l<-list()
-  # check if either x,y element of loc is greater than
-  # the dimension of the landscape matrix
-  for(i in -2:2){
-    for(j in -2:2){
-      # case 1 on left or right edge of matrix
-      if(!(loc[1]+i < 1 | loc[1]+i > nrow) & !(loc[2]+j < 1 | loc[2]+j > ncol)){
-        l[[k]] <- c(loc[1] + i, loc[2] + j)
-        k<-k+1
-      }
+makeDecision<-function(lc, lc.agg, nbrs){
+  max.var<-0
+  max.var.cells<-NULL
+  print(length(nbrs))
+  
+  for(i in 1:length(nbrs)){
+    print(nbrs[i])
+    nbr.ext<-extentFromCells(lc.agg, nbrs[i])
+    print("here")
+    # grab all of the cells within the extent of the
+    # aggregated cell
+    cells<-cellsFromExtent(lc, nbr.ext)
+    # want to look at proportions of habitat within
+    # each neighboring cell
+    
+    # first we want to see the proportional makeup of each
+    # neighboring cell wrgt land cover
+    
+    # nbr.cover.types<-unique(lc[cells[1:length(cells)]])
+    if(var(lc[cells[1:length(cells)]]) > max.var){
+    max.var<-var(lc[cells[1:length(cells)]])
+    max.var.cells<-cells
     }
   }
-  l
+  max.var.ext<-extentFromCells(lc, max.var.cells)
+  # return selection based on maximal variation
+  cellsFromExtent(lc.agg, max.var.ext)
 }
 
 get_distance_vector<-function(current_location, neighbors){
@@ -152,7 +158,7 @@ get_distance_vector<-function(current_location, neighbors){
 #' Updates individual locations
 #' @param data_frame holds data about deer
 #' @export
-move<-function(inds.df, lc.rast){
+move<-function(inds, lc, lc.agg){
   # for(i in 1:nrow(data_frame)){
   #   nbrs<-get_neighbors(c(data_frame[i,]$x,data_frame[i,]$y), nrow, ncol)
   #   # distance_vector<-unlist(lapply(get_distance_vector(c(data_frame[i,]$x,data_frame[i,]$y), nbrs), get_inverse))
@@ -161,39 +167,51 @@ move<-function(inds.df, lc.rast){
   #   data_frame[i,]$y<-new_loc[[2]]
   # }
   
-  # grab the adjacent tiles (queens case)
-  nbrs <- adjacent(lc.rast, cellFromXY(lc.rast, c(inds.df$x, inds.df$y)), directions=8, pairs=TRUE)
-  xyFromCell(lc.rast, nbrs[sample(c(1:length(nbrs)), 1)])
+  # grab the adjacent tiles
+  nbrs <- adjacent(lc.agg,
+                   cellFromXY(lc.agg, c(inds$x, inds$y)),
+                   directions=4, pairs=FALSE)
+
+  selection<-makeDecision(lc, lc.agg, nbrs)
+  print(selection)
+  xyFromCell(lc.agg, selection)
 }
 
 
+
+
 lc<-raster("C:\\Users\\jackx\\OneDrive\\Desktop\\cwd-project\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif")
+# arbitrarily setting 25 as our aggregation factor
+lc.agg<-aggregate(lc, 25)
 
-
-# inds<-make_inds(1,
-#           xmin(lc),
-#           xmax(lc),
-#           ymin(lc),
-#           ymax(lc),
-#           1)
+inds<-make_inds(15,
+          xmin(lc.agg),
+          xmax(lc.agg),
+          ymin(lc.agg),
+          ymax(lc.agg),
+          1)
 # write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
 # 
-# for(i in 1:1000){
-#   lc.mat<-as.matrix(lc)
-#   new.coord<-move(inds, lc)
-#   inds[1,]$x <- new.coord[1]
-#   inds[1,]$y <- new.coord[2]
-#   inds[1,]$time_step = inds[1,]$time_step+1
-#   write.table(inds,  "C:\\Users\\jackx\\Desktop\\deerdat.csv",
+# for(i in 1:20){
+#   for(i in 1:nrow(inds)){
+#   new.coord<-move(inds[i,], lc, lc.agg)
+#   inds[i,]$x <- new.coord[1]
+#   inds[i,]$y <- new.coord[2]
+#   new.coord
+#   inds[i,]$time_step = inds[1,]$time_step+1
+#   print(inds)
+#   write.table(inds[i,],  "C:\\Users\\jackx\\Desktop\\deerdat.csv",
 #               row.names=FALSE, sep=",", append=TRUE, col.names=FALSE,
 #   )
+#   }
 # }
 
 data<-read.csv("C:\\Users\\jackx\\Desktop\\deerdat.csv")
-lc.pts <- rasterToPoints(lc, spatial = TRUE)
+lc.pts <- rasterToPoints(lc.agg, spatial = TRUE)
 lc.df  <- data.frame(lc.pts)
 # set our column names to be something a bit more descriptive
 colnames(lc.df)<-c("cover_type", "x", "y", "optional")
 ggplot(data=lc.df, aes(x=x, y=y)) + 
-  geom_raster(aes(fill=cover_type)) + 
-  geom_point(data = data, aes(x = x, y = y, color = "red"))
+  geom_raster(aes(fill=cover_type)) +
+  geom_point(data = data, aes(x = x, y = y, color = "red", group=id))+
+  geom_path(data = data, aes(x = x, y = y, color = "red", group=id))
