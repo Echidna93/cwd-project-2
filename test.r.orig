@@ -5,6 +5,10 @@ library(ggplot2)
 library(reshape2)
 library(raster)
 library(dismo)
+library(resample)
+
+# source("individual.r")
+
 # lc=raster::raster("C:\\Users\\jackx\\OneDrive\\Desktop\\Langrange-Movement-R\\tcma_lc_finalv1\\tcma_lc_finalv1.tif")
 # # cropped.lc <- crop()
 # 
@@ -74,6 +78,20 @@ make_inds <- function(n_initial,
                      time_step=1,
                      stringsAsFactors=FALSE) 
   inds
+}
+
+<<<<<<< HEAD
+# want function that takes in the raster layer
+# splits each numeric value into it's own raster
+# throws them into a raster stack
+# returns the raster stack
+
+make_raster_stack <- function(lc.rast){
+  cover_vals <- c()
+  cover_vals <- unique(lc.rast)
+  for(i in cover_vals){
+    
+    }
 }
 
 lc<-raster("C:\\Users\\jackx\\OneDrive\\Desktop\\cwd-project\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif")
