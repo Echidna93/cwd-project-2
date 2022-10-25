@@ -71,8 +71,20 @@ make_inds <- function(n_initial,
   inds
 }
 
+# want function that takes in the raster layer
+# splits each numeric value into it's own raster
+# throws them into a raster stack
+# returns the raster stack
 
-lc<-raster("C:\\Users\\jackx\\OneDrive\\Desktop\\Langrange-Movement-R\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif")
+make_raster_stack <- function(lc.rast){
+  cover_vals <- c()
+  cover_vals <- unique(lc.rast)
+  for(i in cover_vals){
+    
+    }
+}
+
+lc<-raster("C:\\Users\\jackx\\OneDrive\\Desktop\\cwd-project\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif")
 inds<-make_inds(100,
           xmin(lc),
           xmax(lc),
@@ -83,7 +95,7 @@ inds<-make_inds(100,
 # first grab the points of the raster
 lc.pts <- rasterToPoints(lc, spatial = TRUE)
 # now throw those into a data frame
-lc.df  <- data.frame(lc_pts)
+lc.df  <- data.frame(lc.pts)
 # set our column names to be something a bit more descriptive
 colnames(lc.df)<-c("cover_type", "x", "y", "optional")
 ggplot(data=lc.df, aes(x=x, y=y)) + 
