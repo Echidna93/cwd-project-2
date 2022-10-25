@@ -87,7 +87,6 @@ inds<-make_inds(100,
 # first grab the points of the raster
 lc.pts <- rasterToPoints(lc, spatial = TRUE)
 # now throw those into a data frame
-=======
 #' #' Chooses best possible landscape component to move to
 #' #' TODO alter in the case of an make_decision being fed an empty list, make 
 #' #' else case
@@ -198,25 +197,24 @@ inds<-make_inds(15,
           ymin(lc.agg),
           ymax(lc.agg),
           1)
-# write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
-# 
-# for(i in 1:20){
-#   for(i in 1:nrow(inds)){
-#   new.coord<-move(inds[i,], lc, lc.agg)
-#   inds[i,]$x <- new.coord[1]
-#   inds[i,]$y <- new.coord[2]
-#   new.coord
-#   inds[i,]$time_step = inds[1,]$time_step+1
-#   print(inds)
-#   write.table(inds[i,],  "C:\\Users\\jackx\\Desktop\\deerdat.csv",
-#               row.names=FALSE, sep=",", append=TRUE, col.names=FALSE,
-#   )
-#   }
-# }
+write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
+
+for(i in 1:20){
+  for(i in 1:nrow(inds)){
+  new.coord<-move(inds[i,], lc, lc.agg)
+  inds[i,]$x <- new.coord[1]
+  inds[i,]$y <- new.coord[2]
+  new.coord
+  inds[i,]$time_step = inds[1,]$time_step+1
+  print(inds)
+  write.table(inds[i,],  "C:\\Users\\jackx\\Desktop\\deerdat.csv",
+              row.names=FALSE, sep=",", append=TRUE, col.names=FALSE,
+  )
+  }
+}
 
 data<-read.csv("C:\\Users\\jackx\\Desktop\\deerdat.csv")
 lc.pts <- rasterToPoints(lc.agg, spatial = TRUE)
->>>>>>> refactor-reintroduce-selection-process
 lc.df  <- data.frame(lc.pts)
 # set our column names to be something a bit more descriptive
 colnames(lc.df)<-c("cover_type", "x", "y", "optional")
