@@ -50,28 +50,36 @@ case = 8
 #' initiates a data frame of deer
 #' @param n_initial # number of individuals
 #' @param dim dimension of a vector for random assignment of location
-#' @param nI # infected individuals to start
+#' @param nI # infected individuals to 
+#' @param lc.agg # aggregated landscape 
 #' @export
-make_inds <- function(n_initial,
-                      min_x_dim,
-                      max_x_dim,
-                      min_y_dim,
-                      max_y_dim,
-                      nI){
-  id<-1:n_initial
-  x<-round(runif(n_initial, min=min_x_dim, max=max_x_dim))
-  y<-round(runif(n_initial, min=min_y_dim, max=max_y_dim))
+make_inds <- function(n.initial,
+                      min.x.dim,
+                      max.x.dim,
+                      min.y.dim,
+                      max.y.dim,
+                      nI,
+                      lc.agg){
+  id<-1:n.initial
+  x<-round(runif(n.initial, min=min.x.dim, max=max.x.dim))
+  y<-round(runif(n.initial, min=min.y.dim, max=max.y.dim))
   # holds coords of placement; acts as home-range "centroid"
   x.init <- x
   y.init <- y
-  I<-sample(1:n_initial, nI)
-  status<-rep("S", times=n_initial)
+  I<-sample(1:n.initial, nI)
+  status<-rep("S", times=n.initial)
   status[I]<-"I"
+  cell.init<-c()
+  for(i in 1:length(x)){
+    cell.init[i]<-cellFromXY(lc.agg, c(x[i], y[i]))
+  }
   inds <- data.frame(id = id,
                      x=x,
                      y=y,
+                     crnt.cell=cell.init,
                      x.init=x.init,
                      y.init=y.init,
+                     cell.init=cell.init,
                      status=status,
                      time_step=1,
                      stringsAsFactors=FALSE) 
@@ -79,12 +87,6 @@ make_inds <- function(n_initial,
 }
 
 lc<-raster("C:\\Users\\jackx\\OneDrive\\Desktop\\cwd-project\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif")
-inds<-make_inds(100,
-          xmin(lc),
-          xmax(lc),
-          ymin(lc),
-          ymax(lc),
-          1)
 # note that in order to use ggplot with raster conversion is needed
 # first grab the points of the raster
 lc.pts <- rasterToPoints(lc, spatial = TRUE)
@@ -123,13 +125,15 @@ makeDecision<-function(lc, lc.agg, nbrs){
   max.var<-0
   max.var.cells<-NULL
   print(length(nbrs))
-  
   for(i in 1:length(nbrs)){
-    print(nbrs[i])
-    
     ## CODE FOR MAKING NBD Matrix FOR GETTING DISTANCE
     
-    
+    # in the case where the initial point (home range centroid)
+    # is outside of the visualised movement area
+    # we need to tack the centroid into the neighbors vector
+    # probably should consider having this be 
+    # hr.centroid<-cellFromXY(lc.agg, ind)
+    # nbrs[length(nbrs) + 1] <- hr.centroid[1]
     # nbr.ext<-extentFromCells(lc.agg, nbrs)
     # nbr.crop<-crop(lc.agg, nbr.ext)
     # nbr.crop
@@ -145,8 +149,8 @@ makeDecision<-function(lc, lc.agg, nbrs){
     # neighboring cell wrgt land cover
     
     # nbr.cover.types<-unique(lc[cells[1:length(cells)]])
-    if(var(lc[cells[1:length(cells)]]) > max.var){
-    max.var<-var(lc[cells[1:length(cells)]])
+    print(var(lc[cells[1:length(cells)]]))
+    if(mean(lc[cells[1:length(cells)]]) > max.var){
     max.var.cells<-cells
     }
   }
@@ -211,15 +215,15 @@ inds<-make_inds(5,
           xmax(lc.agg),
           ymin(lc.agg),
           ymax(lc.agg),
-          1)
+          1,
+          lc.agg)
 write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
 
 for(i in 1:20){
   for(i in 1:nrow(inds)){
   nbrs<-getNeighbors(lc.agg, inds[i,], case)
   nbrs
-  dist.df<-getDistance(inds[i,], nbrs)
-  print(dist.df)
+  # dist.df<-getDistance(inds[i,], nbrs)
   new.coord<-move(inds[i,], lc, lc.agg)
   inds[i,]$x <- new.coord[1]
   inds[i,]$y <- new.coord[2]
