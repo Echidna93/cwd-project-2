@@ -5,6 +5,8 @@ library(ggplot2)
 library(reshape2)
 library(raster)
 library(dismo)
+
+case = 8
 # lc=raster::raster("C:\\Users\\jackx\\OneDrive\\Desktop\\Langrange-Movement-R\\tcma_lc_finalv1\\tcma_lc_finalv1.tif")
 # # cropped.lc <- crop()
 # 
@@ -116,6 +118,7 @@ lc.pts <- rasterToPoints(lc, spatial = TRUE)
 #'   decision_vec
 #' }
 
+
 makeDecision<-function(lc, lc.agg, nbrs){
   max.var<-0
   max.var.cells<-NULL
@@ -123,8 +126,15 @@ makeDecision<-function(lc, lc.agg, nbrs){
   
   for(i in 1:length(nbrs)){
     print(nbrs[i])
+    
+    ## CODE FOR MAKING NBD Matrix FOR GETTING DISTANCE
+    
+    
+    # nbr.ext<-extentFromCells(lc.agg, nbrs)
+    # nbr.crop<-crop(lc.agg, nbr.ext)
+    # nbr.crop
+    
     nbr.ext<-extentFromCells(lc.agg, nbrs[i])
-    print("here")
     # grab all of the cells within the extent of the
     # aggregated cell
     cells<-cellsFromExtent(lc, nbr.ext)
@@ -145,21 +155,24 @@ makeDecision<-function(lc, lc.agg, nbrs){
   cellsFromExtent(lc.agg, max.var.ext)
 }
 
-get_distance_vector<-function(current_location, neighbors){
-  distance_vector<-c()
-  for(i in 1:length(neighbors)){
-    current_neighbor<-c(neighbors[[i]][1],neighbors[[i]][2])
-    distance<-dist(rbind(current_location, current_neighbor))
-    # check if we're comparing against the current cell that the individual
-    # is occupying
-    if(distance==0){
-      distance_vector[i]<-1
+getDistance<-function(ind, nbrs){
+  nbr.indx<-c(1:nrow(nbrs + 1))
+  dist.from.current<-c()
+  dist.from.origin<-c()
+  for(i in 1:nrow(nbrs)){
+    print(nbrs[i])
+    to<-xyFromCell(lc.agg, nbrs[i])
+    dist.from.current[i]<-pointDistance(c(ind$x, ind$y), c(to[1], to[2]), lonlat=FALSE)
+    dist.from.origin[i]<-pointDistance(c(ind$x.init, ind$y.init), c(to[1], to[2]), lonlat=FALSE)
+    dist.from.current[nrow(nbrs)]<-1
+    dist.from.origin[nrow(nbrs)]<-1
+    
     }
-    else{
-      distance_vector[i]<-distance
-    }
-  }
-  distance_vector
+  dist.df<-data.frame(nbr.indx=nbr.indx,
+                      dist.from.current=dist.from.current,
+                      dist.from.origin=dist.from.origin)
+  dist.df[dist.df==0]<-1
+  dist.df
 }
 
 #' Updates individual locations
@@ -175,23 +188,25 @@ move<-function(inds, lc, lc.agg){
   # }
   
   # grab the adjacent tiles
-  nbrs <- adjacent(lc.agg,
-                   cellFromXY(lc.agg, c(inds$x, inds$y)),
-                   directions=4, pairs=FALSE)
-
   selection<-makeDecision(lc, lc.agg, nbrs)
+  
   print(selection)
   xyFromCell(lc.agg, selection)
 }
 
 
-
+getNeighbors<-function(lc.agg, ind, case){
+  adjacent(lc.agg,
+           cellFromXY(lc.agg, c(ind$x, ind$y)),
+           directions=case,
+           pairs=FALSE)
+}
 
 lc<-raster("C:\\Users\\jackx\\OneDrive\\Desktop\\cwd-project\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif")
 # arbitrarily setting 25 as our aggregation factor
-lc.agg<-aggregate(lc, 25)
+lc.agg<-aggregate(lc, 10)
 
-inds<-make_inds(15,
+inds<-make_inds(5,
           xmin(lc.agg),
           xmax(lc.agg),
           ymin(lc.agg),
@@ -201,6 +216,10 @@ write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
 
 for(i in 1:20){
   for(i in 1:nrow(inds)){
+  nbrs<-getNeighbors(lc.agg, inds[i,], case)
+  nbrs
+  dist.df<-getDistance(inds[i,], nbrs)
+  print(dist.df)
   new.coord<-move(inds[i,], lc, lc.agg)
   inds[i,]$x <- new.coord[1]
   inds[i,]$y <- new.coord[2]
@@ -220,5 +239,5 @@ lc.df  <- data.frame(lc.pts)
 colnames(lc.df)<-c("cover_type", "x", "y", "optional")
 ggplot(data=lc.df, aes(x=x, y=y)) + 
   geom_raster(aes(fill=cover_type)) +
-  geom_point(data = data, aes(x = x, y = y, color = "red", group=id))+
-  geom_path(data = data, aes(x = x, y = y, color = "red", group=id))
+  geom_point(data = data, aes(x = x, y = y, color = status, group=id))+
+  geom_path(data = data, aes(x = x, y = y, color = status, group=id))
