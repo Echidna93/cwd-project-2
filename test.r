@@ -5,47 +5,10 @@ library(ggplot2)
 library(reshape2)
 library(raster)
 library(dismo)
-
+library
 case = 8
-# lc=raster::raster("C:\\Users\\jackx\\OneDrive\\Desktop\\Langrange-Movement-R\\tcma_lc_finalv1\\tcma_lc_finalv1.tif")
-# # cropped.lc <- crop()
-# 
-# #rasterToPolygos(lc)
-# # pts <- sampleRast(lc, 1000)
-# # pts
-# # lc
-# # hist(lc)
-# 
-# # plot(lc)
-# xmax(lc)
-# 
-# b <- as(extent(500000, 510000, 5000000, 5010000), 'SpatialPolygons')
-# crs(b) <- crs(lc)
-# rb <- crop(lc, b)
-# 
-# plot(rb)
-# rb.df<-as.data.frame(rb)
-# writeRaster(rb,
-#             filename="C:\\Users\\jackx\\OneDrive\\Desktop\\Langrange-Movement-R\\tcma_lc_finalv1\\tcma_10000_by_10000_croppped.tif",
-#             overwrite=TRUE)
-            
 
 # b <- as(extent(507000, 508000, 5007000, 5008000), 'SpatialPolygons')
-# crs(b) <- crs(lc)
-# rb <- crop(lc, b)
-# writeRaster(rb,
-#                         filename="C:\\Users\\jackx\\OneDrive\\Desktop\\Langrange-Movement-R\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif",
-#                         overwrite=TRUE)
-# plot(rb)
-# rb.df<-as.data.frame(rb)
-
-# tclc.df<-as.data.frame(tc.lc.cropped)
-# 
-# tclc
-
-# lc.df<-as.data.frame(lc)
-# lc.df
-
 
 #' initiates a data frame of deer
 #' @param n_initial # number of individuals
@@ -87,44 +50,23 @@ make_inds <- function(n.initial,
 }
 
 lc<-raster("C:\\Users\\jackx\\OneDrive\\Desktop\\cwd-project\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif")
-# note that in order to use ggplot with raster conversion is needed
-# first grab the points of the raster
-lc.pts <- rasterToPoints(lc, spatial = TRUE)
-# now throw those into a data frame
-#' #' Chooses best possible landscape component to move to
-#' #' TODO alter in the case of an make_decision being fed an empty list, make 
-#' #' else case
-#' #' TODO implement sorting function
-#' #' @param 
-#' #' @export
-#' make_decision<-function(landscape, nbrs){
-#'   # assign decision to be the first element by default--make comparison
-#'   decision_vec <- c()
-#'     #empty list to hold values of neighbors
-#'     weights<-c()
-#'     landscape_values<-c()
-#'     for(i in 1:length(nbrs)){
-#'       # append value of neighbor to weight vector
-#'       landscape_values[i]<-landscape[nbrs[[i]][1],][nbrs[[i]][2]]
-#'       }
-#'     # weights <- landscape_values * distance_vector
-#'     weights <- landscape_values
-#'     # weighted sample is a vector of the indices of nbrs weighted by
-#'     # their corresponding values in the landscape matrix
-#'     weighted_sample<-sample(c(1:length(nbrs)), size=100, replace=TRUE, prob=weights)
-#'     print(weighted_sample)
-#'     # print(weighted_sample)
-#'     # now we want to randomly sample from this list to get the index
-#'     decision_val <- sample(weighted_sample, 1)
-#'     decision_vec <- c(nbrs[[decision_val]][1], nbrs[[decision_val]][2])
-#'   decision_vec
-#' }
-
-
-makeDecision<-function(lc, lc.agg, nbrs){
+makeDecision<-function(lc, lc.agg, ind){
   max.var<-0
   max.var.cells<-NULL
+  nbrs<-getNeighbors(ind, lc.agg)
   print(length(nbrs))
+  weights<-c()
+  landscape.vec<-c()
+  # check if centroid is in the nbrs list
+  if(!ind$cell.init %in% nbrs){
+      nbrs[length(nbrs) + 1] <- ind$cell.init
+  }
+  nbrs.ext<-extentFromCells(lc.agg, nbrs)
+  nbrs<-cellsFromExtent(lc.agg, nbrs.ext)
+  nbrs.ext<-extentFromCells(lc.agg,nbrs)
+  nbr.crop<-crop(lc.agg, nbrs.ext)
+  nbr.crop.dis<-as.array(1/distanceFromPoints(nbr.crop, c(ind$x.init, ind$y.init)))
+  print(length(nbr.crop.dis))
   for(i in 1:length(nbrs)){
     ## CODE FOR MAKING NBD Matrix FOR GETTING DISTANCE
     
@@ -132,11 +74,11 @@ makeDecision<-function(lc, lc.agg, nbrs){
     # is outside of the visualised movement area
     # we need to tack the centroid into the neighbors vector
     # probably should consider having this be 
-    # hr.centroid<-cellFromXY(lc.agg, ind)
-    # nbrs[length(nbrs) + 1] <- hr.centroid[1]
-    # nbr.ext<-extentFromCells(lc.agg, nbrs)
-    # nbr.crop<-crop(lc.agg, nbr.ext)
-    # nbr.crop
+    
+   
+    
+    # in the neighbor crop we want to get the distances in the raster q.3214
+    
     
     nbr.ext<-extentFromCells(lc.agg, nbrs[i])
     # grab all of the cells within the extent of the
@@ -149,57 +91,24 @@ makeDecision<-function(lc, lc.agg, nbrs){
     # neighboring cell wrgt land cover
     
     # nbr.cover.types<-unique(lc[cells[1:length(cells)]])
-    print(var(lc[cells[1:length(cells)]]))
-    if(mean(lc[cells[1:length(cells)]]) > max.var){
-    max.var.cells<-cells
-    }
+    landscape.vec[i]<-mean(lc[cells[1:length(cells)]])
   }
-  max.var.ext<-extentFromCells(lc, max.var.cells)
-  # return selection based on maximal variation
-  cellsFromExtent(lc.agg, max.var.ext)
-}
-
-getDistance<-function(ind, nbrs){
-  nbr.indx<-c(1:nrow(nbrs + 1))
-  dist.from.current<-c()
-  dist.from.origin<-c()
-  for(i in 1:nrow(nbrs)){
-    print(nbrs[i])
-    to<-xyFromCell(lc.agg, nbrs[i])
-    dist.from.current[i]<-pointDistance(c(ind$x, ind$y), c(to[1], to[2]), lonlat=FALSE)
-    dist.from.origin[i]<-pointDistance(c(ind$x.init, ind$y.init), c(to[1], to[2]), lonlat=FALSE)
-    dist.from.current[nrow(nbrs)]<-1
-    dist.from.origin[nrow(nbrs)]<-1
-    
-    }
-  dist.df<-data.frame(nbr.indx=nbr.indx,
-                      dist.from.current=dist.from.current,
-                      dist.from.origin=dist.from.origin)
-  dist.df[dist.df==0]<-1
-  dist.df
+  print(length(landscape.vec))
+  weights<-landscape.vec*nbr.crop.dis
+  weighted.sel<-sample(sample(c(1:length(nbrs)), size=100, replace=TRUE, prob=weights),1)
+  nbrs[weighted.sel]
 }
 
 #' Updates individual locations
 #' @param data_frame holds data about deer
 #' @export
-move<-function(inds, lc, lc.agg){
-  # for(i in 1:nrow(data_frame)){
-  #   nbrs<-get_neighbors(c(data_frame[i,]$x,data_frame[i,]$y), nrow, ncol)
-  #   # distance_vector<-unlist(lapply(get_distance_vector(c(data_frame[i,]$x,data_frame[i,]$y), nbrs), get_inverse))
-  #   new_loc<-make_decision(landscape=landscape, nbrs=nbrs)
-  #   data_frame[i,]$x<-new_loc[[1]]
-  #   data_frame[i,]$y<-new_loc[[2]]
-  # }
-  
-  # grab the adjacent tiles
-  selection<-makeDecision(lc, lc.agg, nbrs)
-  
-  print(selection)
+move<-function(ind, lc, lc.agg){
+  selection<-makeDecision(lc, lc.agg, ind)
   xyFromCell(lc.agg, selection)
 }
 
 
-getNeighbors<-function(lc.agg, ind, case){
+getNeighbors<-function(ind, lc.agg, case = 8){
   adjacent(lc.agg,
            cellFromXY(lc.agg, c(ind$x, ind$y)),
            directions=case,
@@ -210,31 +119,28 @@ lc<-raster("C:\\Users\\jackx\\OneDrive\\Desktop\\cwd-project\\tcma_lc_finalv1\\t
 # arbitrarily setting 25 as our aggregation factor
 lc.agg<-aggregate(lc, 10)
 
-inds<-make_inds(5,
-          xmin(lc.agg),
-          xmax(lc.agg),
-          ymin(lc.agg),
-          ymax(lc.agg),
-          1,
-          lc.agg)
-write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
-
-for(i in 1:20){
-  for(i in 1:nrow(inds)){
-  nbrs<-getNeighbors(lc.agg, inds[i,], case)
-  nbrs
-  # dist.df<-getDistance(inds[i,], nbrs)
-  new.coord<-move(inds[i,], lc, lc.agg)
-  inds[i,]$x <- new.coord[1]
-  inds[i,]$y <- new.coord[2]
-  new.coord
-  inds[i,]$time_step = inds[1,]$time_step+1
-  print(inds)
-  write.table(inds[i,],  "C:\\Users\\jackx\\Desktop\\deerdat.csv",
-              row.names=FALSE, sep=",", append=TRUE, col.names=FALSE,
-  )
-  }
-}
+# inds<-make_inds(5,
+#           xmin(lc.agg),
+#           xmax(lc.agg),
+#           ymin(lc.agg),
+#           ymax(lc.agg),
+#           1,
+#           lc.agg)
+# write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
+# 
+# for(i in 1:20){
+#   for(i in 1:nrow(inds)){
+#   new.coord<-move(inds[i,], lc, lc.agg)
+#   inds[i,]$x <- new.coord[1]
+#   inds[i,]$y <- new.coord[2]
+#   new.coord
+#   inds[i,]$time_step = inds[1,]$time_step+1
+#   print(inds)
+#   write.table(inds[i,],  "C:\\Users\\jackx\\Desktop\\deerdat.csv",
+#               row.names=FALSE, sep=",", append=TRUE, col.names=FALSE,
+#   )
+#   }
+# }
 
 data<-read.csv("C:\\Users\\jackx\\Desktop\\deerdat.csv")
 lc.pts <- rasterToPoints(lc.agg, spatial = TRUE)
