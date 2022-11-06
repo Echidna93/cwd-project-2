@@ -8,6 +8,28 @@ library(dismo)
 library
 case = 8
 
+
+# TODO figure out a way to take these values in 
+# programatically and sort them based on some
+# known 
+
+ls.val<-c(1:12)
+ls.def<-c("grass",
+          "bare soil",
+          "buildings",
+          "roads",
+          "lake", 
+          "deciduous canopy",
+          "coniferous canopy",
+          "agriculture", 
+          "emergent wetland",
+          "forested wetland",
+          "river",
+          "extraction")
+
+ls.types<-data.frame(val=ls.val, def=ls.def
+)
+
 # b <- as(extent(507000, 508000, 5007000, 5008000), 'SpatialPolygons')
 
 #' initiates a data frame of deer
@@ -24,18 +46,35 @@ make_inds <- function(n.initial,
                       nI,
                       lc.agg){
   id<-1:n.initial
-  x<-round(runif(n.initial, min=min.x.dim, max=max.x.dim))
-  y<-round(runif(n.initial, min=min.y.dim, max=max.y.dim))
+  # randomly generate starting position until
+  x<-c()
+  y<-c()
+  cell.init<-c()
+  cell.temp<-NA
+  for(i in 1:n.initial){
+    repeat{
+      x.temp<-round(runif(1, min=min.x.dim, max=max.x.dim))
+      y.temp<-round(runif(1, min=min.y.dim, max=max.y.dim))
+      cell.temp<-cellFromXY(lc.agg, c(x.temp, y.temp))
+      tmp.val<-lc.agg[cell.temp]
+    
+      # need to make sure we're not placing any individuals in water elements
+      if(!(tmp.val == 5 || tmp.val == 11 ||
+           tmp.val == 3 || is.na(tmp.val))){
+        x[i]<-x.temp
+        y[i]<-y.temp
+        cell.init[i]<-cell.temp
+        print(lc.agg[cell.temp])
+        break
+      }
+    }
+  }
   # holds coords of placement; acts as home-range "centroid"
   x.init <- x
   y.init <- y
   I<-sample(1:n.initial, nI)
   status<-rep("S", times=n.initial)
   status[I]<-"I"
-  cell.init<-c()
-  for(i in 1:length(x)){
-    cell.init[i]<-cellFromXY(lc.agg, c(x[i], y[i]))
-  }
   inds <- data.frame(id = id,
                      x=x,
                      y=y,
@@ -49,8 +88,13 @@ make_inds <- function(n.initial,
   inds
 }
 
+getLandscapeMetric<-function(nbr){
 
-makeDecision<-function(lc, lc.agg, ind){
+}
+
+
+makeDecision<-function(ind, lc.agg, lc){
+  print("in make decision")
   nbrs<-getNeighbors(ind, lc.agg)
   weights<-c()
   landscape.vec<-c()
@@ -60,8 +104,7 @@ makeDecision<-function(lc, lc.agg, ind){
   }
   nbrs.ext<-extentFromCells(lc.agg, nbrs)
   nbrs<-cellsFromExtent(lc.agg, nbrs.ext)
-  nbrs<-nbrs[!is.na(nbrs)]
-  # print(nbrs)
+  nbrs<-nbrs[!is.na(nbrs)]# make sure we aren't on an edge
   nbrs.ext<-extentFromCells(lc.agg,nbrs)
   nbr.crop<-crop(lc.agg, nbrs.ext)
   nbr.crop.dis<-as.array(1/distanceFromPoints(nbr.crop, c(ind$x.init, ind$y.init)))
@@ -92,9 +135,8 @@ makeDecision<-function(lc, lc.agg, ind){
 #' Updates individual locations
 #' @param data_frame holds data about deer
 #' @export
-move<-function(ind, lc, lc.agg){
-  selection<-makeDecision(lc, lc.agg, ind)
-  xyFromCell(lc.agg, selection)
+move<-function(ind, lc.agg, lc){
+  makeDecision(ind, lc.agg, lc)
 }
 
 
@@ -104,7 +146,7 @@ updateInfectionRast<-function(ind, lc.stack){
 
 getNeighbors<-function(ind, lc.agg, case = 8){
   adjacent(lc.agg,
-           cellFromXY(lc.agg, c(ind$x, ind$y)),
+           ind$crnt.cell,
            directions=case,
            pairs=FALSE)
 }
@@ -117,7 +159,7 @@ infctn<-lc.agg
 # need to set all values to zero
 infctn[1:length(infctn)]<-0
 lc.stck<-stack(lc.agg, infctn)
-inds<-make_inds(40,
+inds<-make_inds(20,
           xmin(lc.agg),
           xmax(lc.agg),
           ymin(lc.agg),
@@ -125,27 +167,28 @@ inds<-make_inds(40,
           1,
           lc.agg)
 write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
-for(t in 1:20){
+for(t in 1:5){
   for(i in 1:nrow(inds)){
   if(inds[i,]$status=="I"){
     lc.stck[[2]][inds[i,]$crnt.cell] <- lc.stck[[2]][inds[i,]$crnt.cell] + 1
     # check if the current cell is occupied by another indiviudal
     for(j in 1:nrow(inds)){
+      print("in second for loop")
       if((inds[i,]$crnt.cell == inds[j,]$crnt.cell) & !(inds[i,]$id == inds[j,]$id)){
         inds[j,]$status = "I"
       }
     }
-  }
-  new.coord<-move(inds[i,], lc, lc.stck[[1]])
+  inds[i,]$crnt.cell<-move(inds[i,], lc.stck[[1]], lc) # grab the new cell
+  new.coord<-xyFromCell(lc.agg, inds[i,]$crnt.cell)
   inds[i,]$x <- new.coord[1]
   inds[i,]$y <- new.coord[2]
-  inds[i,]$crnt.cell<-cellFromXY(lc.stck[[1]], c(inds[i,]$x,inds[i,]$y))
   inds[i,]$time_step = inds[1,]$time_step+1
   }
   write.table(inds,  "C:\\Users\\jackx\\Desktop\\deerdat.csv",
               row.names=FALSE, sep=",", append=TRUE, col.names=FALSE)
+  print(inds)
   }
-
+}
 data<-read.csv("C:\\Users\\jackx\\Desktop\\deerdat.csv")
 lc.pts <- rasterToPoints(lc.stck[[1]], spatial = TRUE)
 lc.df  <- data.frame(lc.pts)
@@ -155,13 +198,11 @@ lc.plot<-ggplot(data=lc.df, aes(x=x, y=y)) +
   geom_raster(aes(fill=cover_type)) +
   geom_point(data = data, aes(x = x, y = y, color = status, group=id))+
   geom_path(data = data, aes(x = x, y = y, color = status, group=id))
-
-#
-# #
-# # set our column names to be something a bit more descriptive
-infctn.pts <- rasterToPoints(lc.stck[[2]], spatial = TRUE)
-infctn.df  <- data.frame(infctn.pts)
-colnames(infctn.df)<-c("value", "x", "y", "optional")
-infctn.plot<-ggplot(data=infctn.df, aes(x=x, y=y)) +
-  geom_raster(aes(fill=value))
-infctn.plot
+lc.plot
+# set our column names to be something a bit more descriptive
+# infctn.pts <- rasterToPoints(lc.stck[[2]], spatial = TRUE)
+# infctn.df  <- data.frame(infctn.pts)
+# colnames(infctn.df)<-c("value", "x", "y", "optional")
+# infctn.plot<-ggplot(data=infctn.df, aes(x=x, y=y)) +
+#   geom_raster(aes(fill=value))
+# infctn.plot
