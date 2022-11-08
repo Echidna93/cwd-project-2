@@ -57,7 +57,6 @@ make_inds <- function(n.initial,
       y.temp<-round(runif(1, min=min.y.dim, max=max.y.dim))
       cell.temp<-cellFromXY(lc.agg, c(x.temp, y.temp))
       tmp.val<-lc.agg[cell.temp]
-    
       # need to make sure we're not placing any individuals in water elements
       if(!(tmp.val == 5 || tmp.val == 11 ||
            tmp.val == 3 || is.na(tmp.val))){
@@ -72,6 +71,9 @@ make_inds <- function(n.initial,
   # holds coords of placement; acts as home-range "centroid"
   x.init <- x
   y.init <- y
+  is.thirsty <- rep(c(FALSE), n.initial)
+  last.drink <- rep(c(0), n.initial)
+  thirst.threshold<-rep(c(1:6), n.initial)
   I<-sample(1:n.initial, nI)
   status<-rep("S", times=n.initial)
   status[I]<-"I"
@@ -83,6 +85,9 @@ make_inds <- function(n.initial,
                      y.init=y.init,
                      cell.init=cell.init,
                      status=status,
+                     last.drink=last.drink,
+                     is.thirsty=is.thirsty,
+                     thirst.threshold=thirst.threshold,
                      time_step=1,
                      stringsAsFactors=FALSE)
   inds
@@ -94,7 +99,23 @@ getLandscapeMetric<-function(nbr){
 
 
 makeDecision<-function(ind, lc.agg, lc){
-  print("in make decision")
+  selection<-NA
+  if(ind$is.thirsty){
+    lc.water<-lc.agg == 5 # grab water on landscape
+    lc.water[lc.water==0]<-NA # replace everything that isn't water with NA
+    dist.to.water<-distance(lc.water)
+    if(dist.to.water[ind$crnt.cell]<=20){
+      ind$is.thirsty<-FALSE
+      ind$last.drink<-0
+      selection<-ind$cell.init
+    }
+    else{
+      dir.to.water<-direction(lc.water)
+      selection<-ind$crnt.cell + dir.to.water[ind$crnt.cell]  
+    }
+  }
+  else{
+
   nbrs<-getNeighbors(ind, lc.agg)
   weights<-c()
   landscape.vec<-c()
@@ -129,7 +150,9 @@ makeDecision<-function(ind, lc.agg, lc){
   }
   weights<-landscape.vec*nbr.crop.dis
   weighted.sel<-sample(sample(c(1:length(nbrs)), size=100, replace=TRUE, prob=weights),1)
-  nbrs[weighted.sel]
+  selection<-nbrs[weighted.sel]
+  }
+  selection
 }
 
 #' Updates individual locations
@@ -159,7 +182,7 @@ infctn<-lc.agg
 # need to set all values to zero
 infctn[1:length(infctn)]<-0
 lc.stck<-stack(lc.agg, infctn)
-inds<-make_inds(20,
+inds<-make_inds(10,
           xmin(lc.agg),
           xmax(lc.agg),
           ymin(lc.agg),
@@ -167,27 +190,31 @@ inds<-make_inds(20,
           1,
           lc.agg)
 write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
-for(t in 1:5){
+for(t in 1:20){
   for(i in 1:nrow(inds)){
-  if(inds[i,]$status=="I"){
-    lc.stck[[2]][inds[i,]$crnt.cell] <- lc.stck[[2]][inds[i,]$crnt.cell] + 1
-    # check if the current cell is occupied by another indiviudal
+    thirst.weights<-c(inds[i,]$thirst.threshold, inds[i,]$last.drink)
+    inds[i,]$is.thirsty<-sample(sample(c(FALSE, TRUE), size=100, replace=TRUE, prob=thirst.weights),1)
+    if(inds[i,]$status=="I"){
+      lc.stck[[2]][inds[i,]$crnt.cell] <- lc.stck[[2]][inds[i,]$crnt.cell] + 1
+    # check if the current cell is occupied by another individual
     for(j in 1:nrow(inds)){
-      print("in second for loop")
+
       if((inds[i,]$crnt.cell == inds[j,]$crnt.cell) & !(inds[i,]$id == inds[j,]$id)){
         inds[j,]$status = "I"
       }
     }
+  }
   inds[i,]$crnt.cell<-move(inds[i,], lc.stck[[1]], lc) # grab the new cell
   new.coord<-xyFromCell(lc.agg, inds[i,]$crnt.cell)
   inds[i,]$x <- new.coord[1]
   inds[i,]$y <- new.coord[2]
+  inds[i,]$last.drink=inds[i,]$last.drink+1
   inds[i,]$time_step = inds[1,]$time_step+1
   }
   write.table(inds,  "C:\\Users\\jackx\\Desktop\\deerdat.csv",
               row.names=FALSE, sep=",", append=TRUE, col.names=FALSE)
   print(inds)
-  }
+  
 }
 data<-read.csv("C:\\Users\\jackx\\Desktop\\deerdat.csv")
 lc.pts <- rasterToPoints(lc.stck[[1]], spatial = TRUE)
