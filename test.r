@@ -77,29 +77,33 @@ make_inds <- function(n.initial,
   I<-sample(1:n.initial, nI)
   status<-rep("S", times=n.initial)
   status[I]<-"I"
-  inds <- data.frame(id = id,
-                     x=x,
-                     y=y,
-                     crnt.cell=cell.init,
-                     x.init=x.init,
-                     y.init=y.init,
-                     cell.init=cell.init,
-                     status=status,
-                     last.drink=last.drink,
-                     is.thirsty=is.thirsty,
-                     thirst.threshold=thirst.threshold,
-                     time_step=1,
-                     stringsAsFactors=FALSE)
-  inds
+  data.frame(id = id,
+             x=x,
+             y=y,
+             crnt.cell=cell.init,
+             x.init=x.init,
+             y.init=y.init,
+             cell.init=cell.init,
+             status=status,
+             last.drink=last.drink,
+             is.thirsty=is.thirsty,
+             thirst.threshold=thirst.threshold,
+             time_step=1,
+             stringsAsFactors=FALSE)
 }
 
 getLandscapeMetric<-function(nbr){
 
 }
 
+getClosestElementIndex<-function(nbrs, selection){
+  which(abs(nbrs - selection) == min(abs(nbrs - selection)))
+}
+
 
 makeDecision<-function(ind, lc.agg, lc){
   selection<-NA
+  nbrs<-getNeighbors(ind, lc.agg)
   if(ind$is.thirsty){
     lc.water<-lc.agg == 5 # grab water on landscape
     lc.water[lc.water==0]<-NA # replace everything that isn't water with NA
@@ -107,16 +111,36 @@ makeDecision<-function(ind, lc.agg, lc){
     if(dist.to.water[ind$crnt.cell]<=20){
       ind$is.thirsty<-FALSE
       ind$last.drink<-0
-      selection<-ind$cell.init
+      lc.hr<-lc.agg==ind$cell.init
+      dir.to.hr<-lc.hr[ind$crnt.cell]
+      selection<-ind$cell.init + dir.to.hr
+      print(paste("this is selection: ", selection, sep=""))
+      selection.index<-getClosestElementIndex(nbrs, selection)
+      weights<-rep.int(1,length(nbrs))
+      weights[selection.index]<-2
+      selection<-sample(sample(c(1:length(nbrs)),size=100,replace=TRUE, prob=weights),1)
+      selection<-nbrs[selection]
     }
     else{
       dir.to.water<-direction(lc.water)
-      selection<-ind$crnt.cell + dir.to.water[ind$crnt.cell]  
+      selection<-ind$crnt.cell + dir.to.water[ind$crnt.cell]
+      print(paste("this is selection: ", selection, sep=""))
+      selection.index<-getClosestElementIndex(nbrs, selection)
+      weights<-rep.int(1,length(nbrs))
+      weights[selection.index]<-2
+      selection<-sample(sample(c(1:length(nbrs)),size=100,replace=TRUE, prob=weights),1)
+      selection<-nbrs[selection]
     }
+    # if(selection %in% nbrs){
+    #   print(paste("selection number: ", selection, "in: ", nbrs, sep = " "))
+    #   print( selection)
+    # }
+    # else{
+    #   print(paste("selection number: ", selection, "not in: ", nbrs, sep = " "))
+    #   print( selection)
+    # }
   }
   else{
-
-  nbrs<-getNeighbors(ind, lc.agg)
   weights<-c()
   landscape.vec<-c()
   # check if centroid is in the nbrs list
@@ -182,7 +206,7 @@ infctn<-lc.agg
 # need to set all values to zero
 infctn[1:length(infctn)]<-0
 lc.stck<-stack(lc.agg, infctn)
-inds<-make_inds(10,
+inds<-make_inds(3,
           xmin(lc.agg),
           xmax(lc.agg),
           ymin(lc.agg),
@@ -205,6 +229,7 @@ for(t in 1:20){
     }
   }
   inds[i,]$crnt.cell<-move(inds[i,], lc.stck[[1]], lc) # grab the new cell
+  print(paste("this is current cell:", inds[i,]$crnt.cell, sep=" "))
   new.coord<-xyFromCell(lc.agg, inds[i,]$crnt.cell)
   inds[i,]$x <- new.coord[1]
   inds[i,]$y <- new.coord[2]
@@ -213,7 +238,7 @@ for(t in 1:20){
   }
   write.table(inds,  "C:\\Users\\jackx\\Desktop\\deerdat.csv",
               row.names=FALSE, sep=",", append=TRUE, col.names=FALSE)
-  print(inds)
+  #print(inds)
   
 }
 data<-read.csv("C:\\Users\\jackx\\Desktop\\deerdat.csv")
