@@ -30,8 +30,6 @@ ls.def<-c("grass",
 ls.types<-data.frame(val=ls.val, def=ls.def
 )
 
-# b <- as(extent(507000, 508000, 5007000, 5008000), 'SpatialPolygons')
-
 #' initiates a data frame of deer
 #' @param n_initial # number of individuals
 #' @param dim dimension of a vector for random assignment of location
@@ -93,7 +91,6 @@ make_inds <- function(n.initial,
 }
 
 getLandscapeMetric<-function(nbr){
-
 }
 
 getClosestElementIndex<-function(nbrs, selection){
@@ -105,7 +102,6 @@ makeDecision<-function(ind, lc.stck, lc){
   selection<-NA
   weights<-c()
   landscape.vec<-c()
-  
   nbrs<-adjacent(lc.stck[[1]],ind$crnt.cell,directions=case,pairs=FALSE) 
   # check if centroid is in the nbrs list
   if(!ind$cell.init %in% nbrs){
@@ -147,18 +143,21 @@ makeDecision<-function(ind, lc.stck, lc){
     }
   }
   else{
-  for(i in 1:length(nbrs)){
-    nbr.ext<-extentFromCells(lc.stck[[1]], nbrs[i])
-    cells<-cellsFromExtent(lc, nbr.ext)
-    landscape.vec[i]<-mean(lc[cells[1:length(cells)]])
+    for(i in 1:length(nbrs)){
+      nbr.ext<-extentFromCells(lc.stck[[1]], nbrs[i])
+      cells<-cellsFromExtent(lc, nbr.ext)
+      landscape.vec[i]<-mean(lc[cells[1:length(cells)]])
   }
-  # we can change this to make it an individualized "tolerance" from home range
-  # center
+  # we can change this to make it an 
+  # individualized "tolerance" from home range center
   weights<-landscape.vec
   if(distance(lc.hr)[ind$crnt.cell] >= 400){
     weights<-landscape.vec*nbr.crop.dis
   }
-  selection<-nbrs[sample(sample(c(1:length(nbrs)), size=100, replace=TRUE, prob=weights),1)]
+  selection<-nbrs[sample(sample(c(1:length(nbrs)),
+                                size=100,
+                                replace=TRUE,
+                                prob=weights),1)]
   }
   selection
 }
@@ -170,7 +169,6 @@ move<-function(ind, lc.stck, lc){
   makeDecision(ind, lc.stck, lc)
 }
 
-
 lc<-raster("C:\\Users\\jackx\\OneDrive\\Desktop\\cwd-project\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif")
 # arbitrarily setting 25 as our aggregation factor
 lc.agg<-aggregate(lc, 10)
@@ -181,40 +179,44 @@ infctn[1:length(infctn)]<-0
 lc.water<-lc.agg==5
 lc.water[lc.water==0]<-NA # so we can utilize distance function
 lc.stck<-stack(lc.agg, infctn, lc.water)
-# inds<-make_inds(50,
-#           xmin(lc.agg),
-#           xmax(lc.agg),
-#           ymin(lc.agg),
-#           ymax(lc.agg),
-#           1,
-#           lc.agg)
-# write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
-# startTime=Sys.time()
-# for(t in 1:40){
-#   for(i in 1:nrow(inds)){
-#     thirst.weights<-c(inds[i,]$thirst.threshold, inds[i,]$last.drink)
-#     inds[i,]$is.thirsty<-sample(sample(c(FALSE, TRUE), size=100, replace=TRUE, prob=thirst.weights),1)
-#     if(inds[i,]$status=="I"){
-#       lc.stck[[2]][inds[i,]$crnt.cell] <- lc.stck[[2]][inds[i,]$crnt.cell] + 1
-#     # check if the current cell is occupied by another individual
-#     for(j in 1:nrow(inds)){
-#       if((inds[i,]$crnt.cell == inds[j,]$crnt.cell) & !(inds[i,]$id == inds[j,]$id)){
-#         inds[j,]$status = "I"
-#       }
-#     }
-#   }
-#   inds[i,]$crnt.cell<-move(inds[i,], lc.stck, lc) # grab the new cell
-#   new.coord<-xyFromCell(lc.stck, inds[i,]$crnt.cell)
-#   inds[i,]$x <- new.coord[1]
-#   inds[i,]$y <- new.coord[2]
-#   inds[i,]$last.drink=inds[i,]$last.drink+1
-#   inds[i,]$time_step = inds[1,]$time_step+1
-#   }
-#   write.table(inds,  "C:\\Users\\jackx\\Desktop\\deerdat.csv",
-#               row.names=FALSE, sep=",", append=TRUE, col.names=FALSE)
-# }
-# endTime=Sys.time()
-# print(paste("total run time: ", endTime-startTime, sep=""))
+inds<-make_inds(50,
+          xmin(lc.agg),
+          xmax(lc.agg),
+          ymin(lc.agg),
+          ymax(lc.agg),
+          1,
+          lc.agg)
+write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
+startTime=Sys.time()
+for(t in 1:40){
+  for(i in 1:nrow(inds)){
+    thirst.weights<-c(inds[i,]$thirst.threshold, inds[i,]$last.drink)
+    inds[i,]$is.thirsty<-sample(sample(c(FALSE, TRUE), size=100, replace=TRUE, prob=thirst.weights),1)
+    if(inds[i,]$status=="I"){
+      lc.stck[[2]][inds[i,]$crnt.cell] <- lc.stck[[2]][inds[i,]$crnt.cell] + 1
+    # check if the current cell is occupied by another individual
+    for(j in 1:nrow(inds)){
+      if((inds[i,]$crnt.cell == inds[j,]$crnt.cell) & !(inds[i,]$id == inds[j,]$id)){
+        inds[j,]$status = "I"
+      }
+    }
+  }
+  inds[i,]$crnt.cell<-move(inds[i,], lc.stck, lc) # grab the new cell
+  new.coord<-xyFromCell(lc.stck, inds[i,]$crnt.cell)
+  inds[i,]$x <- new.coord[1]
+  inds[i,]$y <- new.coord[2]
+  inds[i,]$last.drink=inds[i,]$last.drink+1
+  inds[i,]$time_step = inds[1,]$time_step+1
+  }
+  write.table(inds,
+              "C:\\Users\\jackx\\Desktop\\deerdat.csv",
+              row.names=FALSE,
+              sep=",",
+              append=TRUE,
+              col.names=FALSE)
+}
+endTime=Sys.time()
+print(paste("total run time: ", endTime-startTime, sep=""))
 data<-read.csv("C:\\Users\\jackx\\Desktop\\deerdat.csv")
 lc.pts <- rasterToPoints(lc.stck[[1]], spatial = TRUE)
 lc.df  <- data.frame(lc.pts)
@@ -225,6 +227,7 @@ lc.plot<-ggplot(data=lc.df, aes(x=x, y=y)) +
   geom_point(data = data, aes(x = x, y = y, color = status, group=id))+
   geom_path(data = data, aes(x = x, y = y, color = status, group=id))
 lc.plot
+
 # set our column names to be something a bit more descriptive
 # infctn.pts <- rasterToPoints(lc.stck[[2]], spatial = TRUE)
 # infctn.df  <- data.frame(infctn.pts)
