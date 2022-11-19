@@ -20,7 +20,6 @@ Xmin<-as.numeric(xmin(lc))
 Ymin<-as.numeric(ymin(lc))
 Ymax<-as.numeric(ymax(lc))
 
-
 hr.rand<-data.frame(x=runif(n.initial*n.hr)*(Xmax-Xmin)+Xmin,y=runif(n.initial*n.hr)*(Ymax-Ymin)+Ymin)
 hr.rand$w=1
 hr.centroid<-hr.rand[sample(1:nrow(hr.rand), n.initial, replace=FALSE,prob=hr.rand$w),c("x","y")]
@@ -32,13 +31,24 @@ for(i in 1:n.initial){
   ind.loc=ind.loc[1:min(nloc,nrow(ind.loc)),]
   
   ind.loc$disthr=sqrt((ind.loc$x-hr.centroid$x[i])^2+(ind.loc$y-hr.centroid$y[i])^2)
+  if(i == 1){
+    write.csv(ind.loc, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
+  }else{
+    write.table(ind.loc,
+                "C:\\Users\\jackx\\Desktop\\deerdat.csv",
+                row.names=FALSE,
+                sep=",",
+                append=TRUE,
+                col.names=FALSE)
+  }
 }
 lc.pts <- rasterToPoints(lc, spatial = TRUE)
 lc.df  <- data.frame(lc.pts)
 lc.df
 # set our column names to be something a bit more descriptive
+data<-read.csv("C:\\Users\\jackx\\Desktop\\deerdat.csv")
 colnames(lc.df)<-c("cover_type", "x", "y", "optional")
 lc.plot<-ggplot(data=lc.df, aes(x=x, y=y)) +
   geom_raster(aes(fill=cover_type)) +
-  geom_point(data = ind.loc, aes(x = x, y = y))
+  geom_point(data = data, aes(x = x, y = y))
 lc.plot
