@@ -5,15 +5,19 @@ library(ggplot2)
 library(reshape2)
 library(raster)
 library(dismo)
-library
+library(sf)
+library(doParallel)
+library(foreach)
 case = 8
-
-
 # TODO figure out a way to take these values in 
 # programatically and sort them based on some
 # known 
-
 ls.val<-c(1:12)
+# CONSTANTS
+# TODO look into making these changeable by a user in an x11() window?
+gamma=0.1 # recovery rate
+percep<-2
+earth.radius=6371
 ls.def<-c("grass",
           "bare soil",
           "buildings",
@@ -29,9 +33,6 @@ ls.def<-c("grass",
 
 ls.types<-data.frame(val=ls.val, def=ls.def
 )
-
-# b <- as(extent(507000, 508000, 5007000, 5008000), 'SpatialPolygons')
-
 #' initiates a data frame of deer
 #' @param n_initial # number of individuals
 #' @param dim dimension of a vector for random assignment of location
@@ -39,55 +40,46 @@ ls.types<-data.frame(val=ls.val, def=ls.def
 #' @param lc.agg # aggregated landscape 
 #' @export
 make_inds <- function(n.initial,
-                      min.x.dim,
-                      max.x.dim,
-                      min.y.dim,
-                      max.y.dim,
+                      x.dim,
+                      y.dim,
                       nI,
                       lc.agg){
   id<-1:n.initial
   # randomly generate starting position until
-  x<-c()
-  y<-c()
-  cell.init<-c()
-  cell.temp<-NA
+  x.coord.init<-c()
+  y.coord.init<-c()
+  x.cell.init<-c()
+  y.cell.init<-c()
   for(i in 1:n.initial){
     repeat{
-      x.temp<-round(runif(1, min=min.x.dim, max=max.x.dim))
-      y.temp<-round(runif(1, min=min.y.dim, max=max.y.dim))
-      cell.temp<-cellFromXY(lc.agg, c(x.temp, y.temp))
-      tmp.val<-lc.agg[cell.temp]
+      x.tmp<-round(runif(1, min=1, max=x.dim))
+      y.tmp<-round(runif(1, min=1, max=y.dim))
+      tmp.val<-lc.agg[x.tmp,][y.tmp]
       # need to make sure we're not placing any individuals in water elements
       if(!(tmp.val == 5 || tmp.val == 11 ||
            tmp.val == 3 || is.na(tmp.val))){
-        x[i]<-x.temp
-        y[i]<-y.temp
-        cell.init[i]<-cell.temp
-        print(lc.agg[cell.temp])
+        x.coord.init[i]<-xFromCol(lc.agg,x.tmp)
+        y.coord.init[i]<-yFromRow(lc.agg,y.tmp)
+        x.cell.init[i]<-x.tmp
+        y.cell.init[i]<-y.tmp
         break
       }
     }
   }
   # holds coords of placement; acts as home-range "centroid"
-  x.init <- x
-  y.init <- y
-  is.thirsty <- rep(c(FALSE), n.initial)
-  last.drink <- rep(c(0), n.initial)
-  thirst.threshold<-rep(c(1:6), n.initial)
-  I<-sample(1:n.initial, nI)
+  I<-sample(1:n.initial, nI) 
   status<-rep("S", times=n.initial)
   status[I]<-"I"
   data.frame(id = id,
-             x=x,
-             y=y,
-             crnt.cell=cell.init,
-             x.init=x.init,
-             y.init=y.init,
-             cell.init=cell.init,
+             x.cell.init=x.cell.init,
+             y.cell.init=y.cell.init,
+             x.coord.init=x.coord.init,
+             y.coord.init=y.coord.init,
+             x.coord=x.coord.init,
+             y.coord=y.coord.init,
+             x.cell=x.cell.init,
+             y.cell=y.cell.init,
              status=status,
-             last.drink=last.drink,
-             is.thirsty=is.thirsty,
-             thirst.threshold=thirst.threshold,
              time_step=1,
              stringsAsFactors=FALSE)
 }
@@ -100,161 +92,253 @@ getClosestElementIndex<-function(nbrs, selection){
   which(abs(nbrs - selection) == min(abs(nbrs - selection)))
 }
 
-
-makeDecision<-function(ind, lc.agg, lc){
-  selection<-NA
-  nbrs<-getNeighbors(ind, lc.agg)
-  if(ind$is.thirsty){
-    lc.water<-lc.agg == 5 # grab water on landscape
-    lc.water[lc.water==0]<-NA # replace everything that isn't water with NA
-    dist.to.water<-distance(lc.water)
-    if(dist.to.water[ind$crnt.cell]<=20){
-      ind$is.thirsty<-FALSE
-      ind$last.drink<-0
-      lc.hr<-lc.agg==ind$cell.init
-      dir.to.hr<-lc.hr[ind$crnt.cell]
-      selection<-ind$cell.init + dir.to.hr
-      print(paste("this is selection: ", selection, sep=""))
-      selection.index<-getClosestElementIndex(nbrs, selection)
-      weights<-rep.int(1,length(nbrs))
-      weights[selection.index]<-2
-      selection<-sample(sample(c(1:length(nbrs)),size=100,replace=TRUE, prob=weights),1)
-      selection<-nbrs[selection]
-    }
-    else{
-      dir.to.water<-direction(lc.water)
-      selection<-ind$crnt.cell + dir.to.water[ind$crnt.cell]
-      print(paste("this is selection: ", selection, sep=""))
-      selection.index<-getClosestElementIndex(nbrs, selection)
-      weights<-rep.int(1,length(nbrs))
-      weights[selection.index]<-2
-      selection<-sample(sample(c(1:length(nbrs)),size=100,replace=TRUE, prob=weights),1)
-      selection<-nbrs[selection]
-    }
-    # if(selection %in% nbrs){
-    #   print(paste("selection number: ", selection, "in: ", nbrs, sep = " "))
-    #   print( selection)
-    # }
-    # else{
-    #   print(paste("selection number: ", selection, "not in: ", nbrs, sep = " "))
-    #   print( selection)
-    # }
-  }
-  else{
-  weights<-c()
-  landscape.vec<-c()
-  # check if centroid is in the nbrs list
-  if(!ind$cell.init %in% nbrs){
-      nbrs[length(nbrs) + 1] <- ind$cell.init
-  }
-  nbrs.ext<-extentFromCells(lc.agg, nbrs)
-  nbrs<-cellsFromExtent(lc.agg, nbrs.ext)
-  nbrs<-nbrs[!is.na(nbrs)]# make sure we aren't on an edge
-  nbrs.ext<-extentFromCells(lc.agg,nbrs)
-  nbr.crop<-crop(lc.agg, nbrs.ext)
-  nbr.crop.dis<-as.array(1/distanceFromPoints(nbr.crop, c(ind$x.init, ind$y.init)))
-  for(i in 1:length(nbrs)){
-    ## CODE FOR MAKING NBD Matrix FOR GETTING DISTANCE
-    
-    # in the case where the initial point (home range centroid)
-    # is outside of the visualised movement area
-    # we need to tack the centroid into the neighbors vector
-    # probably should consider having this be 
-    # in the neighbor crop we want to get the distances in the raster q.3214
-    nbr.ext<-extentFromCells(lc.agg, nbrs[i])
-    # grab all of the cells within the extent of the
-    # aggregated cell
-    cells<-cellsFromExtent(lc, nbr.ext)
-    # want to look at proportions of habitat within
-    # each neighboring cell
-    # first we want to see the proportional makeup of each
-    # neighboring cell wrgt land cover
-    # nbr.cover.types<-unique(lc[cells[1:length(cells)]])
-    landscape.vec[i]<-mean(lc[cells[1:length(cells)]])
-  }
-  weights<-landscape.vec*nbr.crop.dis
-  weighted.sel<-sample(sample(c(1:length(nbrs)), size=100, replace=TRUE, prob=weights),1)
-  selection<-nbrs[weighted.sel]
-  }
-  selection
-}
-
-#' Updates individual locations
+#' Helper function
+#' want it to return a list of infected deer
 #' @param data_frame holds data about deer
-#' @export
-move<-function(ind, lc.agg, lc){
-  makeDecision(ind, lc.agg, lc)
-}
-
-
-updateInfectionRast<-function(ind, lc.stack){
-
+#' @exportk*
+get_infected_deer<-function(data_frame){
+  # iterator for empty infected_inds array
+  j<-1
+  infected_inds<-rep()
+  for(i in 1:nrow(data_frame)){
+    if(data_frame[i,]$status == "I"){
+      infected_inds[[j]]<-c(data_frame[i,]$id,
+                            data_frame[i,]$x,
+                            data_frame[i,]$y
+      )
+      j<-j+1
+    }
   }
-
-getNeighbors<-function(ind, lc.agg, case = 8){
-  adjacent(lc.agg,
-           ind$crnt.cell,
-           directions=case,
-           pairs=FALSE)
+  infected_inds
 }
 
-lc<-raster("C:\\Users\\jackx\\OneDrive\\Desktop\\cwd-project\\tcma_lc_finalv1\\tcma_1000_by_1000_croppped.tif")
-# arbitrarily setting 25 as our aggregation factor
-lc.agg<-aggregate(lc, 10)
-# make infection matrix
-infctn<-lc.agg
-# need to set all values to zero
-infctn[1:length(infctn)]<-0
-lc.stck<-stack(lc.agg, infctn)
-inds<-make_inds(3,
-          xmin(lc.agg),
-          xmax(lc.agg),
-          ymin(lc.agg),
-          ymax(lc.agg),
-          1,
-          lc.agg)
-write.csv(inds, "C:\\Users\\jackx\\Desktop\\deerdat.csv", row.names=FALSE)
-for(t in 1:20){
-  for(i in 1:nrow(inds)){
-    thirst.weights<-c(inds[i,]$thirst.threshold, inds[i,]$last.drink)
-    inds[i,]$is.thirsty<-sample(sample(c(FALSE, TRUE), size=100, replace=TRUE, prob=thirst.weights),1)
-    if(inds[i,]$status=="I"){
-      lc.stck[[2]][inds[i,]$crnt.cell] <- lc.stck[[2]][inds[i,]$crnt.cell] + 1
-    # check if the current cell is occupied by another individual
-    for(j in 1:nrow(inds)){
+# TODO use the single parameter used in white's code for the location of the deer
 
-      if((inds[i,]$crnt.cell == inds[j,]$crnt.cell) & !(inds[i,]$id == inds[j,]$id)){
-        inds[j,]$status = "I"
+#' Updates individual values within dataframe
+#' @param data_frame holds data about deer
+#' @param infection_matrix holds data about current infectivity levels of landscape
+#' @param infectivity_threshold some amount of disease where infection automatically happens (definitely subject to change)
+#' @export
+update_infection_statuses<-function(data_frame, infection_matrix, infectivity_threshold){
+  inf_inds<-get_infected_deer(data_frame)
+  # TODO break this off into it's own function, maybe is_same_location
+  for(i in 1:nrow(data_frame)){
+    # increment time step; used for animation (if desired)
+    # TODO investigate breaking this off into it's own helper function
+    data_frame[i,]$time_step = data_frame[i,]$time_step + 1
+    if(data_frame[i,]$status=="S"){
+      if(is_cell_inf_val_above_threshold(infection_matrix[data_frame[i,]$xloc + data_frame[i,]$yloc],infectivity_threshold)){
+        data_frame[i,]$status = "I"
+      }
+      else{
+        for(j in 1:length(inf_inds)) {
+          if(data_frame[i,]$xloc==inf_inds[[j]][2] & 
+             data_frame[i,]$yloc==inf_inds[[j]][3] &
+             !(data_frame[i,]$id==inf_inds[[j]][1])){
+            data_frame[i,]$status = "I"
+          }
+        }
       }
     }
   }
-  inds[i,]$crnt.cell<-move(inds[i,], lc.stck[[1]], lc) # grab the new cell
-  print(paste("this is current cell:", inds[i,]$crnt.cell, sep=" "))
-  new.coord<-xyFromCell(lc.agg, inds[i,]$crnt.cell)
-  inds[i,]$x <- new.coord[1]
-  inds[i,]$y <- new.coord[2]
-  inds[i,]$last.drink=inds[i,]$last.drink+1
-  inds[i,]$time_step = inds[1,]$time_step+1
-  }
-  write.table(inds,  "C:\\Users\\jackx\\Desktop\\deerdat.csv",
-              row.names=FALSE, sep=",", append=TRUE, col.names=FALSE)
-  #print(inds)
-  
+  data_frame
 }
-data<-read.csv("C:\\Users\\jackx\\Desktop\\deerdat.csv")
-lc.pts <- rasterToPoints(lc.stck[[1]], spatial = TRUE)
+
+#' Helper function
+#' Determines if current cell value is above acceptable "infection" threshold
+#' @param cell_value current cell coordinate(s)
+#' @param infection_matrix holds data about current infectivity levels of landscape
+#' @param infectivity_threshold some amount of disease where infection automatically happens (definitely subject to change)
+#' @export
+is_cell_inf_val_above_threshold<-function(cell_value, infectivity_threshold){
+  cell_value>=infectivity_threshold
+}
+
+#' Updates the matrix that holds infection levels for the landscape
+#' @param data_frame holds data about deer
+#' @param inf_matrix holds data about current infectivity levels of landscape
+#' @export
+update_infection_matrix<-function(inf_matrix, data_frame){
+  for(i in 1:nrow(data_frame)){
+    if(data_frame[i,]$status == "I")
+      inf_matrix[data_frame[i,]$xloc, data_frame[i,]$yloc]<-inf_matrix[data_frame[i,]$xloc,data_frame[i,]$yloc] + 1
+  }
+  max_val<-max(inf_matrix)
+  apply(inf_matrix, 2, divide_by_max, max=max_val)
+}
+
+# helper function
+# divides by max value of matrix
+divide_by_max<-function(x, max){
+  x / max
+}
+#' Updates individual locations
+#' @param data_frame holds data about deer
+#' @export
+move<-function(ind, landscape, nrow, ncol){
+    nbrs<-getNeighbors(c(ind$x.cell,ind$y.cell), nrow, ncol)
+    # new_loc<-nbrs[[round(runif(1,1,length(nbrs)))]]
+    new_loc<-makeDecision(landscape, nbrs=nbrs,ind)
+    c(new_loc[[1]], new_loc[[2]])
+}
+
+#' helper function
+eucDistance<-function(P1, P2, earthRadius){
+  p1<-earthRadius*(P1*(pi/180))
+  p2<-earthRadius*(P2*(pi/180))
+  sqrt((((p2[1]-p1[1])^2)+((p2[2]-p1[2])^2)))
+}
+
+#' Chooses best possible landscape component to move to
+#' TODO alter in the case of an make_decision being fed an empty list, make 
+#' else case
+#' TODO implement sorting function
+#' @param 
+#' @export
+makeDecision<-function(landscape, nbrs, ind){
+  # assign decision to be the first element by default--make comparison
+  decision_vec <- c()
+    i<-1
+    #empty list to hold values of neighbors
+    weights<-c()
+    print(length(nbrs))
+    for(i in 1:length(nbrs)){
+      # append value of neighbor to weight vector
+      if(6<=landscape[nbrs[[i]][1],][nbrs[[i]][2]] & landscape[nbrs[[i]][1],][nbrs[[i]][2]]<=11){
+      weights[i]<-3
+      # buildings
+      }
+      else if(landscape[nbrs[[i]][1],][nbrs[[i]][2]]==3){
+        weights[i]<-0
+      }
+      else if(landscape[nbrs[[i]][1],][nbrs[[i]][2]]==5){
+        weights[i]<-1
+      }
+      else{
+        weights[i]<-2
+      }
+      # if we aren't in an area in individual can't go
+      # we want to weight the distance from HR center
+      if(!weights[i]==0){
+        print(weights)
+        inv.distance<-(1/eucDistance(c(xFromCol(lc.agg,nbrs[[i]][1]),
+                                      yFromRow(lc.agg,nbrs[[i]][2])),
+                                    c(ind$x.coord.init,ind$y.coord.init),
+                                    earth.radius))
+        if(!is.infinite(inv.distance)){
+        weights[i]<-weights[i]*inv.distance}
+      }
+      
+    }
+    # weighted sample is a vector of the indices of nbrs weighted by
+    # their corresponding values in the landscape matrix
+    weighted_sample<-sample(c(1:length(nbrs)), size=100, replace=TRUE, prob=weights)
+    # now we want to randomly sample from this list to get the index
+    decision_val <- sample(weighted_sample, 1)
+    # decision_vec <- c(nbrs[[decision_val]][1], nbrs[[decision_val]][2])
+    nbrs[[decision_val]]
+}
+
+#' Helper function
+#' returns neighborhood of cells as a list of vectors
+#' @param loc current coordinates of individual
+#' @param nrow # of rows in landscape matrix
+#' @param ncol # columns in landscape matrix
+#' @export
+getNeighbors<-function(loc, nrow, ncol){
+  k=1
+  l<-list()
+  # check if either x,y element of loc is greater than
+  # the dimension of the landscape matrix
+  for(i in -percep:percep){
+    for(j in -percep:percep){
+      # case 1 on left or right edge of matrix
+      if(!(loc[1]+i < 1 | loc[1]+i > nrow) & !(loc[2]+j < 1 | loc[2]+j > ncol)){
+        l[[k]] <- c(loc[1] + i, loc[2] + j)
+        k<-k+1
+      }
+    }
+  }
+  l
+}
+# Main simulation
+# TODO make main simulation loop, using functional? (lapply)
+check_inds_locs<-function(ind, data_frame){
+  for(i in 1:nrow(data_frame)){
+    if(is_same_location(ind, data_frame[i,]) & is_not_same_id(ind, data_frame[i,])){
+      
+    }
+  }
+}
+
+#helper function is location the same
+is_same_location<-function(ind1, ind2){
+  (ind1$x.cell == ind2$x.cell) & (ind1$y.cell == ind2$y.cell)
+}
+
+#helper checks if two ids are the same
+is_not_same_id<-function(ind1, ind2){
+  !(ind1$id == ind2$id)
+}
+
+recover_inds<-function(data_frame, gamma){
+  infected<-which(data_frame$status=="I" ) #which individuals are currently infected?
+  if(length(infected>0)){
+    rec.prob<-runif(length(infected), min=0, max=1)
+    for (i in 1:length(infected)){
+      if(rec.prob[i]<= gamma){
+        data_frame$status[infected[i]]<-"R"
+      }
+    }
+  }
+  return(data_frame)
+}
+# make infection matrix
+b <- as(extent(507000, 508000, 5007000, 5008000), 'SpatialPolygons')
+lc=raster::raster(".\\tcma_lc_finalv1.tif")
+lc.crop <- crop(lc,b)
+lc.agg <- aggregate(lc.crop,20)
+# convert to matrix
+lc.mat<-matrix(lc.agg, nrow=nrow(lc.agg), ncol=ncol(lc.agg))
+lc.mat.inf<-matrix(0, nrow=nrow(lc.agg), ncol=ncol(lc.agg))
+inds<-make_inds(100,
+          nrow(lc.mat),
+          ncol(lc.mat),
+          1,
+          lc.agg)
+write.csv(inds,
+          "./deerdat.csv",
+          row.names=FALSE)
+for(t in 1:100){
+  for(i in 1:nrow(inds)){
+    if(inds[i,]$status=="I"){
+      lc.mat.inf[inds[i,]$x.cell + inds[i,]$y.cell] <- lc.mat.inf[inds[i,]$x.cell + inds[i,]$y.cell] + 1
+      # check if the current cell is occupied by another individual
+    for(j in 1:nrow(inds)){
+      if(is_same_location(inds[j,], inds[i,]) & !(inds[j,]$id == inds[i,]$id)){
+        inds[j,]$status = "I"
+        }
+      }
+    }
+  print(paste("individual", i, "current cell:", inds[i,]$x.cell, inds[i,]$y.cell), sep=" ")
+  new.cell<-move(inds[i,], lc.mat, nrow(lc.mat), ncol(lc.mat)) # grab the new cell
+  print(paste("updated cell: ", new.cell[1], new.cell[2]), sep=" ")
+  inds[i,]$x.cell <- new.cell[1]
+  inds[i,]$y.cell <- new.cell[2]
+  inds[i,]$time_step = inds[1,]$time_step+1
+  inds[i,]$x.coord = xFromCol(lc.agg,new.cell[1])
+  inds[i,]$y.coord = yFromRow(lc.agg,new.cell[2])
+  }
+  write.table(inds,  "./deerdat.csv",
+              row.names=FALSE, sep=",", append=TRUE, col.names=FALSE)
+}
+
+
+data<-read.csv("./deerdat.csv")
+lc.pts <- rasterToPoints(lc.agg, spatial = TRUE)
 lc.df  <- data.frame(lc.pts)
 # set our column names to be something a bit more descriptive
-colnames(lc.df)<-c("cover_type", "x", "y", "optional")
-lc.plot<-ggplot(data=lc.df, aes(x=x, y=y)) +
-  geom_raster(aes(fill=cover_type)) +
-  geom_point(data = data, aes(x = x, y = y, color = status, group=id))+
-  geom_path(data = data, aes(x = x, y = y, color = status, group=id))
-lc.plot
-# set our column names to be something a bit more descriptive
-# infctn.pts <- rasterToPoints(lc.stck[[2]], spatial = TRUE)
-# infctn.df  <- data.frame(infctn.pts)
-# colnames(infctn.df)<-c("value", "x", "y", "optional")
-# infctn.plot<-ggplot(data=infctn.df, aes(x=x, y=y)) +
-#   geom_raster(aes(fill=value))
-# infctn.plot
+ggplot(data=lc.df, aes(x=x, y=y)) + 
+  geom_raster(aes(fill=tcma_lc_finalv1)) +
+  geom_point(data = data, aes(x = x.coord, y = y.coord, color = "red", group=id))+
+  geom_path(data = data, aes(x = x.coord, y = y.coord, color = "red", group=id))
