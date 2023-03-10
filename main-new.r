@@ -19,21 +19,30 @@ library(scatterplot3d)
 
 # let's turn this into a df
 year<-c(2019, 2020, 2021, 2022)
+# square miles
+sq.miles <- 332 # this can become a vector as we add more regions later on
 cwd.p<- c(7, 5, 9, 4)
 ttl.harvest<-c(1716, 1839, 1557, 1451)
 n.p.sq.mi<-c(5.17, 5.54, 4.69, 4.37)
 cwd.dat<-data.frame(year,cwd.p, ttl.harvest, n.p.sq.mi)
+
+# generate our proportion of positivity
+# generate our residuals
 cwd.dat$prop.pos<-cwd.dat$cwd.p / cwd.dat$ttl.harvest
 avg.prop.pos<-cwd.dat$prop.pos / nrow(cwd.dat)
 cwd.dat$prop.pos.resid <- cwd.dat$prop.pos - avg.prop.pos
 
-# generate our proportion of positivity
 prop.pos<-rnorm(1,
                 mean=mean(cwd.dat$prop.pos.resid),
                 sd = sd(cwd.dat$prop.pos.resid))
 
-
-# create normal distribution of prop 
+# create normal distribution of prop
+# generate our residuals
+cwd.dat$n.total<-cwd.dat$n.p.sq.mi
+cwd.dat$n.resid <- cwd.dat$n.total - mean(cwd.dat$n.total)
+n.total <- rnorm(1,
+                 mean=mean(cwd.dat$n.p.sq.mi),
+                 sd = sd(cwd.dat$n.p.sq.mi))
 
 # T103R10S33
 # Zone 648, Fillmore County
@@ -65,7 +74,7 @@ m.e = 0.0002 # migration emmigration
 # for now asume that m.e, m.i = m.e, m.i for CWD+, CWD- deer
 
 # yini
-S = 10000
+S = round(n.total * sq.miles, digits = 0)# make this a prop. of land area and n/sq. mile
 E = .00001
 I = round(S * prop.pos, digits = 0)
 
@@ -78,7 +87,7 @@ rigidode <- function(t, y, parms) {
 
 parms<-c(beta.i, d, nu, b, sigma, beta.e)
 yini <- c(S, E, I)
-times <- seq(from = 0, to = 365, by = 1)
+times <- seq(from = 0, to = 365, by = 5)
 out <- ode (times = times, y = yini, func = rigidode, parms = parms)
 head (out, n = 3)
 
