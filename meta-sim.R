@@ -1,5 +1,8 @@
-library(deSolve)
-library(scatterplot3d)
+source("main-new.r")
+
+# this is file for parms
+# supply parms as nxn matrix...eventually
+
 
 # for an established CWD zone 10% occurance (https://www.cdc.gov/prions/cwd/occurrence.html#:~:text=The%20infection%20rates%20among%20some,at%20least%20one%20captive%20herd.&text=As%20of%20June%202022%2C%20there,CWD%20in%20free%2Dranging%20cervids.)
 # annual death rate CWD+ .75--adjusted daily .002
@@ -21,8 +24,9 @@ library(scatterplot3d)
 year<-c(2019, 2020, 2021, 2022)
 cwd.p<- c(7, 5, 9, 4)
 ttl.harvest<-c(1716, 1839, 1557, 1451)
+# number of animals per square mile total
 n.p.sq.mi<-c(5.17, 5.54, 4.69, 4.37)
-cwd.dat<-data.frame(year,cwd.p, ttl.harvest, n.p.sq.mi)
+cwd.dat<-data.frame(year,cwd.p, ttl.harvest, n.ttl.p.sq.mi)
 cwd.dat$prop.pos<-cwd.dat$cwd.p / cwd.dat$ttl.harvest
 avg.prop.pos<-cwd.dat$prop.pos / nrow(cwd.dat)
 cwd.dat$prop.pos.resid <- cwd.dat$prop.pos - avg.prop.pos
@@ -68,18 +72,3 @@ m.e = 0.0002 # migration emmigration
 S = 10000
 E = .00001
 I = round(S * prop.pos, digits = 0)
-
-rigidode <- function(t, y, parms) {
-  dS <-  S * b + m.i*S - (beta.i*S*I + beta.e*S*E + d*S) - m.e*S # change in susceptible pop
-  dI <-  I + beta.i*S*I + beta.e*S*E - (I*d + I*nu) # change in infected pop.
-  dE <-  I * sigma
-  list(c(dS, dI, dE))
-}
-
-parms<-c(beta.i, d, nu, b, sigma, beta.e)
-yini <- c(S, E, I)
-times <- seq(from = 0, to = 365, by = 1)
-out <- ode (times = times, y = yini, func = rigidode, parms = parms)
-head (out, n = 3)
-
-plot(out, main=c("Susceptible (S)", "Infected (I)", "Prion (E)"))
