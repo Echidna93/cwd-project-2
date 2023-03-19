@@ -16,7 +16,7 @@ library(scatterplot3d)
 #     2021  9    766                     158                 499                    134                    1557         332                       2.31                    2.38              4.69              24
 #     2022  4    692                     140                 459                    160                    1451         332                       2.08                    2.29              4.37              25
 
-
+n.pop<-2
 # let's turn this into a df
 year<-c(2019, 2020, 2021, 2022)
 # square miles
@@ -32,7 +32,7 @@ cwd.dat$prop.pos<-cwd.dat$cwd.p / cwd.dat$ttl.harvest
 avg.prop.pos<-cwd.dat$prop.pos / nrow(cwd.dat)
 cwd.dat$prop.pos.resid <- cwd.dat$prop.pos - avg.prop.pos
 
-prop.pos<-rnorm(1,
+prop.pos<-rnorm(n.pop,
                 mean=mean(cwd.dat$prop.pos.resid),
                 sd = sd(cwd.dat$prop.pos.resid))
 
@@ -40,7 +40,7 @@ prop.pos<-rnorm(1,
 # generate our residuals
 cwd.dat$n.total<-cwd.dat$n.p.sq.mi
 cwd.dat$n.resid <- cwd.dat$n.total - mean(cwd.dat$n.total)
-n.total <- rnorm(1,
+n.total <- rnorm(n.pop,
                  mean=mean(cwd.dat$n.p.sq.mi),
                  sd = sd(cwd.dat$n.p.sq.mi))
 
@@ -75,8 +75,10 @@ m.e = 0.0002 # migration emmigration
 
 # yini
 S = round(n.total * sq.miles, digits = 0)# make this a prop. of land area and n/sq. mile
-E = .00001
+E = rep(.00001, n.pop)
 I = round(S * prop.pos, digits = 0)
+
+out<-list()
 
 rigidode <- function(t, y, parms) {
   dS <-  S * b + m.i*S - (beta.i*S*I + beta.e*S*E + d*S) - m.e*S # change in susceptible pop
@@ -86,9 +88,14 @@ rigidode <- function(t, y, parms) {
 }
 
 parms<-c(beta.i, d, nu, b, sigma, beta.e)
-yini <- c(S, E, I)
 times <- seq(from = 0, to = 365, by = 5)
-out <- ode (times = times, y = yini, func = rigidode, parms = parms)
-head (out, n = 3)
-
-plot(out, main=c("Susceptible (S)", "Infected (I)", "Prion (E)"))
+for(iter in 1:n.pop){
+  yini = c(S, E, I)
+  print(yini[1])
+  out[[iter]] <- cbind(run=iter,
+                      (ode (times = times,
+                            y = yini, func = rigidode, parms = parms)))
+}
+# res.f<-do.call(rbind, out)
+head(out, n=3)
+plot(out)
