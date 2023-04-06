@@ -1,5 +1,4 @@
-library(deSolve)
-library(scatterplot3d)
+library(jagsUI)
 
 # for an established CWD zone 10% occurance (https://www.cdc.gov/prions/cwd/occurrence.html#:~:text=The%20infection%20rates%20among%20some,at%20least%20one%20captive%20herd.&text=As%20of%20June%202022%2C%20there,CWD%20in%20free%2Dranging%20cervids.)
 # annual death rate CWD+ .75--adjusted daily .002
@@ -110,11 +109,46 @@ n.cwd.p <- matrix(c(3, 4, 6, 6,
 # yini <- c(S, E, I)
 # times <- seq(from = 0, to = 365, by = 5)
 # out <- ode (times = times, y = yini, func = rigidode, parms = parms)
-# 
+#
 
-# Write to file
-# out.mat <- cbind(out[,1],out[,2], out[,3], out[,4]) # assign prion
-# colnames(out.mat)<-c("time", "S", "I", "E")
-# write.csv(out.mat, file = "sim.csv")
+# disease matrix
+# this will hold the disease matrix that will be processed in another file
 
-# plot(out, main=c("Susceptible (S)", "Infected (I)", "Prion (E)"))
+# list of variables 
+jags.data<-list()
+
+{sink("cwd.jags"); cat("
+model { # JAGS code begins here
+  # define our s_mu as parameter
+  s_mu~dnorm(0,0.33)
+  # define our s_sd as parm
+  s_sd~dunif(0,2)
+  
+  #likewise for f
+  f_mu~dnorm(0,0.33)
+  # define our s_sd as parm
+  f_sd~dunif(0,2)
+  
+  # convert sd to tau
+  s_tau <- pow(s_sd, -2) 
+  f_tau <- pow(f_sd, -2)
+  
+  # Define the multinomial likelihoods
+  
+  for (i in 1:n.nbs){
+    } #t2
+
+  # Last column: probability of non-recovery
+} # end JAGS model
+",fill = TRUE); sink()}
+
+# Parameters monitored
+parms1 <- c()
+
+# MCMC settings
+na <- 1000; ni <- 7000; nt <- 1; nb <- 2000; nc <- 3
+
+# Call JAGS from R (BRT <1 min)
+Brownie_5 <- jagsUI(jags.data, inits = NULL, parms1, "cwd.jags",
+                    n.adapt = na, n.chains = nc, n.thin = nt, n.iter = ni,
+                    n.burnin = nb, parallel = TRUE)
