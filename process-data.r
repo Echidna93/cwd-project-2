@@ -18,15 +18,15 @@ point.dist.cond = 20 # want meters between points
 utm <- st_crs("+proj=utm +zone=15 +datum=WGS84 +units=m +no_defs")
 
 # euclidean distance function
-eucDistance<-function(P1, P2){
-  sqrt((((P2[1]-P1[1])^2)+((P2[2]-P1[2])^2)))
-}
+# eucDistance<-function(P1, P2){
+#   sqrt((((P2[1]-P1[1])^2)+((P2[2]-P1[2])^2)))
+# }
 # read in data
-cwd.dat<-read.table(
-  "./data/cwd-plus-2010-2023.csv",
-  sep=",", header=TRUE)
-deer.hrvst.dat <- read.table("./data/deer-harvest-master.csv",
-                             sep=",",header=TRUE)
+# cwd.dat<-read.table(
+#   "./data/cwd-plus-2010-2023.csv",
+#   sep=",", header=TRUE)
+# deer.hrvst.dat <- read.table("./data/deer-harvest-master.csv",
+#                              sep=",",header=TRUE)
 
 cwd.dat <- subset(cwd.dat, sample_acquisition == "Hunter harvested")
 # read in raster
@@ -93,29 +93,29 @@ ggplot(deer.hrvst.trs.cwd.mgmt.shp$geometry, aes(fill=deer.hrvst.trs.cwd.mgmt.sh
   theme(panel.grid=element_blank(),
         panel.background = element_blank())
 
-# now we can start applying a sar model
-deer.knn <- knearneigh(deer.spat.coords)
-deer.knn2nb = knn2nb(deer.knn)
-deer.list = nbdists(deer.knn2nb, deer.spat.coords)
-deer.dist.vec <- unlist(deer.list)
-upper.bound.75<-0.75*max(deer.dist.vec)
-deer.dnn.nb.75<-dnearneigh(deer.spat.coords, d1=0, d2=upper.bound.75)
-deer.dnn.listw.75 <- nb2listw(deer.dnn.nb.75, style="B", zero.policy=TRUE)
-deer.dnn.car.out.75 <- spautolm(deer.hrvst.trs.cwd.mgmt.shp$cwd.pos~deer.hrvst.trs.cwd.mgmt.shp$BUCKSQMILE,
-                                data=deer.hrvst.trs.cwd.mgmt.shp$geometry, family="CAR", listw=deer.dnn.listw.75, zero.policy = TRUE)
-deer.dnn.car.fitted.75 = fitted(deer.dnn.car.out.75)
-
-deer.hrvst.trs.cwd.mgmt.shp$fitted.car <- deer.dnn.car.fitted.75
-brks = seq(0.0005, 0.2, 0.0005)
-color.pallete = rev(brewer.pal(length(brks),"RdBu"))
-# create 75% of max dist breaks
-class.fitted.car.75 = classIntervals(var=deer.hrvst.trs.cwd.mgmt.shp$fitted.car, n=length(brks), style="fixed", fixedBreaks=brks, dataPrecision=4)
-color.code.fitted.car.75 = findColours(class.fitted.car.75, color.pallete)
-
-ggplot(deer.hrvst.trs.cwd.mgmt.shp$geometry, aes(fill=deer.hrvst.trs.cwd.mgmt.shp$fitted.car)) +
-  geom_sf() +
-  guides(fill=guide_legend(title="cwd positive"), color=guide_legend(show=FALSE)) +
-  theme(panel.grid=element_blank(),
-        panel.background = element_blank())
-
-plot(deer.hrvst.trs.cwd.mgmt.shp$geometry, col=color.code.fitted.car.75)
+# # now we can start applying a sar model
+# deer.knn <- knearneigh(deer.spat.coords)
+# deer.knn2nb = knn2nb(deer.knn)
+# deer.list = nbdists(deer.knn2nb, deer.spat.coords)
+# deer.dist.vec <- unlist(deer.list)
+# upper.bound.75<-0.75*max(deer.dist.vec)
+# deer.dnn.nb.75<-dnearneigh(deer.spat.coords, d1=0, d2=upper.bound.75)
+# deer.dnn.listw.75 <- nb2listw(deer.dnn.nb.75, style="B", zero.policy=TRUE)
+# deer.dnn.car.out.75 <- spautolm(deer.hrvst.trs.cwd.mgmt.shp$cwd.pos~deer.hrvst.trs.cwd.mgmt.shp$BUCKSQMILE,
+#                                 data=deer.hrvst.trs.cwd.mgmt.shp$geometry, family="CAR", listw=deer.dnn.listw.75, zero.policy = TRUE)
+# deer.dnn.car.fitted.75 = fitted(deer.dnn.car.out.75)
+# 
+# deer.hrvst.trs.cwd.mgmt.shp$fitted.car <- deer.dnn.car.fitted.75
+# brks = seq(0.0005, 0.2, 0.0005)
+# color.pallete = rev(brewer.pal(length(brks),"RdBu"))
+# # create 75% of max dist breaks
+# class.fitted.car.75 = classIntervals(var=deer.hrvst.trs.cwd.mgmt.shp$fitted.car, n=length(brks), style="fixed", fixedBreaks=brks, dataPrecision=4)
+# color.code.fitted.car.75 = findColours(class.fitted.car.75, color.pallete)
+# 
+# ggplot(deer.hrvst.trs.cwd.mgmt.shp$geometry, aes(fill=deer.hrvst.trs.cwd.mgmt.shp$fitted.car)) +
+#   geom_sf() +
+#   guides(fill=guide_legend(title="cwd positive"), color=guide_legend(show=FALSE)) +
+#   theme(panel.grid=element_blank(),
+#         panel.background = element_blank())
+# 
+# plot(deer.hrvst.trs.cwd.mgmt.shp$geometry, col=color.code.fitted.car.75)

@@ -22,58 +22,107 @@ library(coda)
 ```
 
 
-```{r load data}
+```{r}
 # read in data
 cwd.dat<-read.table(
   "./data/wi-dat.csv",
   sep=",", header=TRUE)
-wiShp<-st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
-wiCountyShp <- st_read("./data/shapefiles/County_Boundaries_24K/County_Boundaries_24K.shp")
-plot(wiCountyShp)
-
-lc<-raster("./data/raster/WI_NLCD_2011/WI_NLCD_2011/nlcd_wi_utm16.tif")
-## now we can use mask
-wiTwnshpShp<-spTransform(wiTwnshpShp, crs(lc))
-lc.studyarea <-  crop(lc, wiTwnshpShp)
-lc.evergreen <- lc.studyarea==42
-plot(lc.evergreen)
+# deer.hrvst.dat <- read.table("./data/deer-harvest-master.csv",
+#                             sep=",",header=TRUE)
 ```
 
-```{r clean data}
-# remove NA values
-cwd.dat<-na.omit(cwd.dat)
-yrs<-c(2002:2022)
-n.yrs <- length(yrs)
-# create UID 
-# FIPS - TWNSHP - RANGEID - RANGE DIR
-cwd.dat$uid <- 0
+```{r}
 
-for(i in 1:nrow(cwd.dat)){
-  cwd.dat[i,]$uid <- paste(cwd.dat[i,]$fipsCode,cwd.dat[i,]$township,cwd.dat[i,]$range, cwd.dat[i,]$rangeDir, sep="-")
-}
+cwd.agg <- data.frame(wsi=c(unique(cwd.dat.s$wsi)), cwd.pos=0, n=0)
 
-cwd.mat<-matrix(0, nrow=length(unique(cwd.dat$uid)), ncol=n.yrs)
-sites<-unique(cwd.dat$uid)
-
-# aggregate over site
-for(i in 1:nrow(cwd.dat)){
-  for(j in 1:length(sites))
-    for(k in 1:length(yrs)){
-      if(cwd.dat[i,]$uid == sites[j] &
-         cwd.dat[i,]$year == yrs[k])
-        cwd.mat[j,k] = cwd.mat[j,k] + cwd.dat[i,]$cwdPositive
+for(i in 1:nrow(cwd.dat.s)){
+  for(k in 1:nrow(cwd.agg)){
+  if(cwd.dat.s[i,]$wsi == cwd.agg[k,]$wsi)
+     cwd.agg[k,]$cwd.pos = cwd.agg[k,]$cwd.pos + cwd.dat.s[i,]$cwdPositive
+    cwd.agg[k,]$n = cwd.agg[k,]$n + 1
   }
 }
 
-# now we want to subset our shapefiles
-wiCountyStudy<-subset(wiCountyShp, COUNTY_FIP %in% unique(cwd.dat.s$fipsCode))
+ggplot(cwd.agg, aes(wsi, cwd.pos)) +
+  geom_line() +
+    theme(panel.grid=element_blank(),
+        panel.background = element_blank())
+
+
+ggplot(cwd.dat.s, aes(wsi)) +
+  geom_density() +
+    theme(panel.grid=element_blank(),
+        panel.background = element_blank())
+
+```
+
+```{r}
+cwd.agg$prop.pos <- cwd.agg$cwd.pos/cwd.agg$n
+wsi.mod<-lm(cwd.pos~wsi, cwd.agg)
+(wsi.mod)
+plot(wsi.mod)
+```
+
+```{r}
+wiShp<-st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+wiCountyShp <- st_read("./data/shapefiles/County_Boundaries_24K/County_Boundaries_24K.shp")
+plot(wiCountyShp)
+```
+```{r}
 
 # now we want to subset our county data by the study area
+wiCountyStudy<-subset(wiCountyShp, COUNTY_FIP %in% unique(cwd.dat.s$fipsCode))
+
 # next we're going to turn this into an extent
 # let's first make sure we're working with the same CRS
 wiCountyStudy<-st_transform(wiCountyStudy, crs(wiShp))
 studyarea<-st_crop(wiShp, wiCountyStudy)
 plot(studyarea)
+```
+```{r}
+# 
+# cwd.dat<-read.table(
+#   "./data/wi-dat.csv",
+#   sep=",", header=TRUE)
+# wiShp<-st_read("./data/shapefiles/WI_PLSSTownships_1996/plss_townships/WI_PLSSTownships_1996.shp")
+cwd.dat <- cwd.dat%>%subset(year >= 2013)
+
+# wiShp$studyarea <- 0
+
+# clean the cwd data
+# for(i in 1:nrow(cwd.dat)){
+#   if(cwd.dat[i,]$rangeDir == "East"){
+#     cwd.dat[i,]$rangeDir = "E"
+#   }
+#   cwd.dat[i,]$rangeDir == "W"
+# }
+# wiShp.e<-subset(wiShp, DIR==4)
+# cwd.dat<-na.omit(cwd.dat)
+# study.area to subset data for class 
+
+# for(i in 1:nrow(wiShp.e)){
+#   for(j in 1:nrow(cwd.dat)){
+#   if(wiShp.e[i,]$TWP == cwd.dat[j,]$township){
+#     if(wiShp.e[i,]$RNG == cwd.dat[j,]$range){
+#         wiShp.e[i,]$study.area <- 1
+#         }
+#       }
+#     }
+#   }
+
+# next we want to subset our data
+#wiShp.s<-subset(wiShp.e, study.area==1)
+# test
+# study_shape<-subset(wiShp.e, study.area==1)
+
+# do this when we want plot
+# study_shape<-as(study_shape, "Spatial")
+
+# plot(as(study_shape, "Spatial"))
+```
+
+```{r}
+
 wi.coords<-coordinates(as(studyarea, "Spatial"))
 
 studyarea$cwd.pos <- 0
@@ -130,68 +179,32 @@ summary(study.area.moran.out
 
 studyarea.rook.car.out = spautolm(cwd.pos~NULL, data=studyarea, family="CAR", listw=studyarea.rook.listw, zero.policy=TRUE)
 summary(studyarea.rook.car.out)
+```
 
-# subset our shapes
+```{r}
+# now we need to build a new spatial dataframe to hold our temporal data
+# rng<-studyarea$RNG
+# twp<-studyarea$TWP
+# geometry<-studyarea$geometry
+# rtg <- cbind(rng, twp, geometry)
+# years.shapes<-expand.grid(rtg,year.samp)
+# plot(years.shapes)
+
+```
+
+```{r}
+wishp.shp<-readOGR("./data/shapefiles/PLSS_Townships", layer="PLSS_Townships")
+wiCountyShp <- readOGR("./data/shapefiles/County_Boundaries_24K", layer="County_Boundaries_24K")
 wiCountyShp <- subset(wiCountyShp, COUNTY_FIP %in% unique(cwd.dat.s$fipsCode))
 wiCountyShp<-spTransform(wiCountyShp, CRS(proj4string(wishp.shp)))
 wiTwnshpShp<-intersect(wiCountyShp,wishp.shp)
+lc<-raster("./data/raster/WI_NLCD_2011/WI_NLCD_2011/nlcd_wi_utm16.tif")
+## now we can use mask
+wiTwnshpShp<-spTransform(wiTwnshpShp, crs(lc))
+lc.studyarea <-  crop(lc, wiTwnshpShp)
+lc.evergreen <- lc.studyarea==42
+plot(lc.evergreen)
 ```
-
-```{r store data and reload}
-# save our CWD matrix so we don't have to redo
-write.table(cwd.mat, file="cwd")
-cwd.m<-read.table("cwd")
-# TODO save our subsetted spatial data
-```
-
-ANALYSIS
-
-```{r evaluate temporal autocorrelation}
-tmp.corr<-list()
-# we need to remove the sites with zero observations
-cwd.m <- cwd.m[1:100,]
-nrow(cwd.m)
-sites <- sites[-c(101:150)]
-length(sites)
-# first we need to get rid of all those elements in our matrix which have zero variance (i.e. zero observations)
-k = 1
-var.sites.indx <- c()
-mods <- list(type=any)
-# this returns a list of indicies with nonzero variance
-for(i in 1:nrow(cwd.m)){
-  for(j in 1:ncol(cwd.m)){
-    if(cwd.m[i,j] != 0){
-      var.sites.indx[k]<-i
-      k = k + 1
-    }
-  }
-}
-# now we need them to be unique
-var.sites.indx <- unique(var.sites.indx)
-# we subset our samples this way
-cwd.m <- cwd.m[c(var.sites.indx),]
-sites <- sites[var.sites.indx]
-
-# ar is called to get estimates for temporal autocorrelation params
-for(i in 1:nrow(cwd.m)){
-  mods[[i]] <- ar(as.numeric(cwd.m[i,]))
-}
-ars<-c()
-iter <- 1
-
-# we can repeat this for any output of our autocorrelation function that we'd like to see
-for(i in 1:length(mods)){
-  if("ar" %in% names(mods[[i]]) & length(mods[[i]]$ar) > 0 ){
-    for(j in 1:length(mods[[i]]$ar)){
-    ars[iter] <- mods[[i]]$ar[j]      
-    iter <- iter + 1
-    }
-  }
-}
-
-histogram(~ars)
-```
-
 
 ```{r}
 n.evergreen <- rep(0, nrow(wiTwnshpShp))
@@ -224,7 +237,6 @@ wisf<-st_as_sf(wiTwnshpShp)
 ggplot(wisf$geometry, aes(fill=wisf$evergreen.clump)) + 
   geom_sf()
 ```
-
 
 ```{r, CAR model}
 wi.coords <- coordinates()
