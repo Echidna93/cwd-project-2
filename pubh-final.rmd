@@ -282,25 +282,6 @@ summary(studyarea.rook.car.out)
 
 ```
 ```{r, nimble spatial model}
-# 2012 - 2013
-# 2013 - 2014
-# 2014 - 2015
-# 2015 - 2016
-# 2016 - 2017
-# 2017 - 2018
-# 2018 - 2019
-# 2019 - 2020
-# 2020 - 2021
-# 2021 - 2022
-Dane <- c(13, 50, 29, 12, 11, 24, 23, 8, 20, 18)
-Columbia <- c(19, 55, 30, 14, 13, 25, 28, 10, 21, 21)
-Dodge <- c(16, 53, 30, 12,  12, 25, 25, 9, 20, 18)
-Jefferson <- c(12, 47, 29, 11, 10, 24, 21, 5, 20, 15)
-wsi <- data.frame(Dane=Dane, Columbia=Columbia,
-             Dodge=Dodge, Jefferson=Jefferson)
-year.samp <- c(2013,2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022)
-cwd.dat <- cwd.dat%>%subset(year >= 2013)
-cwd.dat$wsi <- 0
 # 2014 - 2022
 # years <- c(1:8)
 # counties <-c("dane", "columbia", "dodge", "jefferson")
@@ -333,6 +314,165 @@ wiTwnshpShp$cwd.expected <- cwd.expected
 
 W.nb <- poly2nb(wiTwnshpShp)
 W <- nb2WB(W.nb)
+## Specify the hierarchical model
+# 
+# dZIP <- nimbleFunction(
+#  run = function(x = integer(), lambda = double(), 
+#                 zeroProb = double(), log = logical(0, default = 0)) {
+#    returnType(double())
+#    ## First handle non-zero data
+#    if (x != 0) {
+#        ## return the log probability if log = TRUE
+#        if (log) return(dpois(x, lambda, log = TRUE) + log(1 - zeroProb))
+#        ## or the probability if log = FALSE
+#       else return((1 - zeroProb) * dpois(x, lambda, log = FALSE))
+#    }
+#    ## From here down we know x is 0
+#    totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
+#    if (log) return(log(totalProbZero))
+#    return(totalProbZero)
+#  })
+# 
+# registerDistributions(list(
+#     dZIP = list(
+#         BUGSdist = "dZIP(lambda, zeroProb)",
+#         discrete = TRUE,
+#         range = c(0, Inf),
+#         types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
+#      )))
+
+# TODO: AVERAGE over years for WSI
+dZIP <- nimbleFunction(
+ run = function(x = integer(), lambda = double(),
+                zeroProb = double(), log = logical(0, default = 0)) {
+   returnType(double())
+   ## First handle non-zero data
+   if (x != 0) {
+       ## return the log probability if log = TRUE
+       if (log) return(dpois(x, lambda, log = TRUE) + log(1 - zeroProb))
+       ## or the probability if log = FALSE
+      else return((1 - zeroProb) * dpois(x, lambda, log = FALSE))
+   }
+   ## From here down we know x is 0
+   totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
+   if (log) return(log(totalProbZero))
+   return(totalProbZero)
+ })
+
+registerDistributions(list(
+    dZIP = list(
+        BUGSdist = "dZIP(lambda, zeroProb)",
+        discrete = TRUE,
+        range = c(0, Inf),
+        types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
+     )))
+
+modelcode <- nimbleCode({
+  # likelihood
+  
+  for (i in 1 : N) {
+      N[i] ~ dZIP(mu[i], p[i])
+        # our expectation can simply be the average of the given sampling unit over the study period
+       # why not try the average for particular year across all sampling units -- later we can try to make it the average across across a cluster of sampling units 
+        # WSI is our WSI index for a particular county in year i
+        log(mu[i]) <- E[i] + beta0 + beta1*clumps[i] + phi[i] + theta[i]
+        theta[i] ~ dnorm(0.0, prec.h)
+        eta[i] <- theta[i] + phi[i]
+  }
+  
+    # CAR model for spatial random effects
+    phi[1:N] ~ dcar_normal(adj[1:L], weights[1:L], num[1:N], prec.c, zero_mean=0)
+    
+    ## priors
+    beta0 ~ dnorm(0.0, sd = 100)  # vague prior on grand intercept
+    beta1 ~ dunif(0,100)  # vague prior on clumpiness covariate effect
+    # beta2 ~ dnorm(0.0, sd = 100) # vague prior on on clumpiness covariate effect 
+    prec.h ~ dgamma(0.001, 0.001)  
+    prec.c ~ dgamma(0.1, 0.1)  
+    
+    # other prior choices for spatial/nonspatial precision
+    # prec.h ~ dgamma(0.32761, 0.181)
+    # prec.c ~ dgamma(0.1, 0.1)
+    
+    # prec.h ~ dgamma(3.2761,1.81)
+    # prec.c ~ dgamma(1.0,1.0)
+
+    sigma2 <- 1/prec.h
+    tau2 <- 1/prec.c
+    
+    ## calculate alpha
+    sd.h <- sd(theta[1:N]) # marginal SD of heterogeneity effects
+    sd.c <- sd(phi[1:N])   # marginal SD of clustering (spatial) effects
+    alpha <- sd.c/(sd.h + sd.c)
+})
+
+p<-runif(nrow(wiTwnshpShp), 0, 1)
+## Specify data and initial values
+constants <- list(N = nrow(wiTwnshpShp), p=p,L = length(W$adj), adj=W$adj, weights=W$weights, num=W$num,
+                  E = wiTwnshpShp$cwd.expected, clumps=wiTwnshpShp$n.evergrn)
+data <- list(y = wiTwnshpShp$cwd.pos)
+inits <- list(beta0 = 0, beta1 = 0, prec.h = 1, prec.c = 1)
+
+
+## Build/Compile model, including steps: 
+## (1) build model (2) compile model in C++ 
+## (3) specify MCMC parameters to collect and create MCMC algorithm
+cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
+c.cwdspatmodel <- compileNimble(cwdspatmodel)
+
+confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0','beta1','sigma2','tau2','eta','alpha'),  enableWAIC = TRUE)
+cwdspatmcmc <- buildMCMC(confMC)
+c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel)
+
+
+## Run MCMC
+mcmc.out <- runMCMC(c.cwdspatmcmc, niter=60000, nburnin=50000, thin=5, nchains=3, WAIC=TRUE)
+
+## convert post samples as mcmc.list object and diagnose convergence using coda functions
+post.samples <- mcmc.list(sapply(mcmc.out$samples,as.mcmc,simplify=FALSE))
+pars <- c("alpha","beta1","tau2","sigma2","eta[1]")
+plot(post.samples[,pars], trace=TRUE, density=FALSE)
+gelman.plot(post.samples[,pars])
+autocorr.plot(post.samples[,pars])
+
+## posterior summary
+summary(post.samples[,pars])
+
+## model assessment using WAIC value
+mcmc.out$WAIC
+```
+
+```{r, mean snow depth model}
+
+pos <- wiTwnshpShp %>% subset(cwd.pos > 0)
+pos$bin<-cut(pos$n.evergrn,breaks=c(499, 999, 1499, 1999, 2499, 2999, 3499, 4000))
+wi<-st_as_sf(wiTwnshpShp)
+ggplot(wi, aes(wi$n.evergrn)) +
+  geom_density() +
+  theme(panel.grid=element_blank(),
+        panel.background = element_blank())
+
+# the following are averaged snow-totals for each county in the following winter seasons
+# 2002 - 2003, 2003 - 2004, 2004 - 2005, 2005 - 2006, 2006 - 2007, 2007 - 2008,
+# 2008 - 2009, 2009 - 2010, 2010 - 2011, 2011 - 2012, 2012 - 2013, 2013 - 2014,
+# 2014 - 2015,2014 - 2015, 2016 - 2017, 2017 - 2018, 2018 - 2019, 2019 - 2020,
+# 2020 - 2021 2021 - 2022
+Dane <- c(43,	32,	49.9,	24.2,	31.1,	27.1,	42.8,	47.7,	59.4,	99.9,	68.7,	40.8,
+          63.1,33.3,	63.8,	41.8,	44.5,	32,	36.8,	53.2,	49.5,	50.4,	33.9)
+Columbia <- c(47,27.6,53.9,37.2,24.9,31,41.2,49.6,56.9,145.3,93.2,55,74,24.8,
+              97.8,55.5,41.5,37.1,47,62,54,41.8,34.3)
+Dodge <- c(48,41.9,57.9,29.7,30,41.2,55.4,47.4,51.1,116.7,80.5,52.6,101.4,46.3,
+           84.1,54.6,35.5,37.3,57,68,55.5,55.5,47)
+Jefferson <- c(42,41.9,49,31.5,28.4,22.6,45.7,44.1,47,110,70,45.1,63.9,41.8,
+               75.7,45.1,49.9,42,66.1,63.4,64.1,60.7,42.6)
+wsi <- data.frame(Dane=Dane, Columbia=Columbia,
+             Dodge=Dodge, Jefferson=Jefferson)
+year.samp <- c(2002, 2003, 2004,2006,2007, 2008, 2009, 2010, 2011, 2012, 2013,
+               2014, 2015, 2016, 2017, 2018, 2019,2020, 2021,2022)
+# cwd.dat <- cwd.dat%>%subset(year >= 2013)
+cwd.dat$wsi <- 0
+
+
 ## Specify the hierarchical model
 # 
 # dZIP <- nimbleFunction(
@@ -464,13 +604,4 @@ summary(post.samples[,pars])
 mcmc.out$WAIC
 ```
 
-```{r, temporal model}
-
-pos <- wiTwnshpShp %>% subset(cwd.pos > 0)
-pos$bin<-cut(pos$n.evergrn,breaks=c(499, 999, 1499, 1999, 2499, 2999, 3499, 4000))
-wi<-st_as_sf(wiTwnshpShp)
-ggplot(wi, aes(wi$n.evergrn)) +
-  geom_density() +
-  theme(panel.grid=element_blank(),
-        panel.background = element_blank())
 ```
