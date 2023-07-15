@@ -103,6 +103,7 @@ cwd.dat.county.sep.sub <- cwd.dat.county.sep[cwd.dat.county.sep$county %in% c("I
 #   }
 # }
 
+wi.cwd.area <- c("Iowa", "Sauk", "Dane", "Richland", "Columbia", "Dodge", "Jefferson", "Rock", "Green", "Lafayette", "Grant", "Crawford", "Vernon", "Monroe", "Juneau", "Adams")
 
 wi.snow.sub <- wi.snow[wi.snow$county %in% c("Iowa", "Sauk", "Dane", "Richland", "Columbia", "Dodge", "Jefferson", "Rock", "Green", "Lafayette", "Grant", "Crawford", "Vernon", "Monroe", "Juneau", "Adams"),]
 
@@ -624,7 +625,7 @@ cwd.by.county<-read.table("./data/cwd-nums-county-by-year.csv",
 
 cwd.by.county[is.na(cwd.by.county)]<-0
 
-cwd.by.county <- cwd.by.county[cwd.by.county$county %in% c("Iowa", "Sauk", "Dane", "Richland", "Columbia", "Dodge", "Jefferson", "Rock", "Green", "Lafayette", "Grant", "Crawford", "Vernon", "Monroe", "Juneau", "Adams"),]
+cwd.by.county <- cwd.by.county[cwd.by.county$county %in% wi.cwd.area,]
 
 wi.snow <- read.table("./data/wi-snowfall.csv",
                       header=TRUE, sep=",") 
@@ -768,17 +769,64 @@ wi.wsi <- read.table("./data/wsi-values.csv",
 wsi.sub <- wi.wsi[wi.wsi$name %in% c("Iowa", "Sauk", "Dane", "Richland", "Columbia", "Dodge", "Jefferson", "Rock", "Green", "Lafayette", "Grant", "Crawford", "Vernon", "Monroe", "Juneau", "Adams"),]
 wsi.sub <- wsi.sub[,-1]
 wsi.mat <- as.matrix(wsi.sub)
+
+
+cwd.nums.by.cnty.by.yr <- read.table("./data/cwd-numbers-by-county-by-year-sep.csv",
+                      header=TRUE, sep=",")
+
+cwd.nums.sep.sub <- subset(cwd.nums.by.cnty.by.yr, cwd.nums.by.cnty.by.yr$county %in% wi.cwd.area)
+total.cwd.by.year <- data.frame(year=year.samp, nanlyzd=rep(0, length(year.samp)), cwd.pos=rep(0, length(year.samp)))
+
+for(i in 1:nrow(cwd.nums.by.cnty.by.yr)){
+  for(j in 1:nrow(total.cwd.by.year)){
+    if(cwd.nums.by.cnty.by.yr[i,]$year == total.cwd.by.year[j,]$year){
+      total.cwd.by.year[j,]$nanlyzd = total.cwd.by.year[j,]$nanlyzd + cwd.nums.by.cnty.by.yr[i,]$nanalyzed
+      total.cwd.by.year[j,]$cwd.pos = total.cwd.by.year[j,]$cwd.pos + cwd.nums.by.cnty.by.yr[i,]$npos
+    }
+  }
+}
+total.cwd.by.year$rate <- 0  
+for(i in 1:nrow(total.cwd.by.year)){
+  total.cwd.by.year[i,]$rate <- total.cwd.by.year[i,]$cwd.pos/total.cwd.by.year[i,]$nanlyzd
+}
+
+cwd.rate <- total.cwd.by.year$rate
+```
+
+```{r, make county bneighborhood matrix}
+# arrange alphabetically
+# this will work but let's figure out how to do this with the packages
+wiCountyShp.studyarea <- subset(wiCountyShp, wiCountyShp$COUNTY_NAM %in% wi.cwd.area)
+# subset to our study area
+wiCountyShp.studyarea <- arrange(wiCountyShp.studyarea, wiCountyShp.studyarea$COUNTY_NAM)
+
+W.nb <- poly2nb(wiCountyShp.studyarea)
+# convert to a binary neighborhood matrix of 0's and 1's
+adj.mat<-nb2mat(W.nb, style="B")
+W <- nb2WB(W.nb)
+
+adj.mat<-matrix(0,nrow=length(wiCountyShp.studyarea$COUNTY_NAM),
+       ncol=length(wiCountyShp.studyarea$COUNTY_NAM))
+
+for(i in 1:nrow(adj.mat)){
+    k = 1
+    while(k < W$num){
+      adj.mat[i, W$adj] <- 1  
+  }
+}
+
 ```
 
 
 ```{r, temporal wsi}
+# We also include numbers from Fieberg et al. 2008
+
 
 # so let's start by getting data for each year
 # make a matrix for positives and number sampled
 
 
-year.samp <- c(2002, 2003, 2004,2006,2007, 2008, 2009, 2010, 2011, 2012, 2013,
-               2014, 2015, 2016, 2017, 2018, 2019,2020, 2021,2022)
+year.samp <- c(2002, 2003, 2004,2006,2007, 2008, 2009, 2010, 2011, 2012, 2013,2014, 2015, 2016, 2017, 2018, 2019,2020, 2021,2022)
 # let's create our expected value matrix
 dZIP <- nimbleFunction(
  run = function(x = integer(), lambda = double(),
@@ -814,7 +862,7 @@ modelcode <- nimbleCode({
     ### likelihood
   for (i in 1 : N) {
     for(j in 1 : years){  
-        y[i, j] ~ dZIP(mu[i,j], p[i, j])
+        y[i, j] ~ dZIP(mu[i,j], logit(p[i, j]))
         mu[i,j] <- beta1*(sum(M[,i]*S[,j+3])/sum(M[,i])) + beta0
     }
   }
@@ -832,7 +880,90 @@ for(i in 1:nrow(cwd.by.county.mat)){
 }
 
 ## Specify data and initial values
-constants <- list(N = nrow(cwd.by.county.mat), M=adj.matrix, years=ncol(cwd.by.county.mat), S=wsi.mat, p=p)
+constants <- list(N = nrow(cwd.by.county.mat), M=adj.mat, years=ncol(cwd.by.county.mat), S=wsi.mat, p=p)
+data <- list(y = cwd.by.county.mat)
+inits <- list(beta0 = 0, beta1 = 0)
+cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
+c.cwdspatmodel <- compileNimble(cwdspatmodel)
+confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0', 'beta1'),  enableWAIC = TRUE)
+cwdspatmcmc <- buildMCMC(confMC)
+c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel)
+## Run MCMC
+mcmc.out <- runMCMC(c.cwdspatmcmc, niter=40000, nburnin=30000, thin=5, nchains=3, WAIC=TRUE)
+## convert post samples as mcmc.list object and diagnose convergence using coda functions
+post.samples <- mcmc.list(sapply(mcmc.out$samples,as.mcmc,simplify=FALSE))
+pars <- c("beta0","beta1")
+plot(post.samples, trace=TRUE, density=FALSE)
+gelman.plot(post.samples)
+autocorr.plot(post.samples)
+## posterior summary
+summary(post.samples)
+## model assessment using WAIC value
+mcmc.out$WAIC
+```
+
+```{r, temporal wsi add var}
+
+# so let's start by getting data for each year
+# make a matrix for positives and number sampled
+
+
+year.samp <- c(2002, 2003, 2004,2006,2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019,2020, 2021,2022)
+# let's create our expected value matrix
+dZIP <- nimbleFunction(
+ run = function(x = integer(), lambda = double(),
+                zeroProb = double(), log = logical(0, default = 0)) {
+   returnType(double())
+   ## First handle non-zero data
+   if (x != 0) {
+       ## return the log probability if log = TRUE
+       if (log) return(dpois(x, lambda, log = TRUE) + log(1 - zeroProb))
+       ## or the probability if log = FALSE
+      else return((1 - zeroProb) * dpois(x, lambda, log = FALSE))
+   }
+   ## From here down we know x is 0
+   totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
+   if (log) return(log(totalProbZero))
+   return(totalProbZero)
+ })
+
+registerDistributions(list(
+    dZIP = list(
+        BUGSdist = "dZIP(lambda, zeroProb)",
+        discrete = TRUE,
+        range = c(0, Inf),
+        types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
+     )))
+
+modelcode <- nimbleCode({
+    ### priors
+    # vague prior on grand intercept
+    beta0~ dnorm(0.0, sd = 100)
+    # vague prior WSI values for the county from the year prior
+    beta1~ dnorm(0.0, sd = 1)
+    ### likelihood
+  for (i in 1 : N) {
+    for(j in 1 : years){  
+        mu[i,j] <- beta1*(sum(M[,i]*S[,j+3])/sum(M[,i])) + beta0
+        pi ~ dbern(p[i])
+        y[i, j] ~ dZIP(mu[i,j], pi)
+        }
+  }
+  # CAR model for spatial random effects
+  #phi[] ~ dcar_normal(adj[1:L], weights[1:L], num[1:N], prec.c, zero_mean=0)
+})
+
+# change this to be a matrix of size i x j
+# p <- matrix(0, nrow=nrow(cwd.by.county.mat), ncol(cwd.by.county.mat))
+# 
+# for(i in 1:nrow(cwd.by.county.mat)){
+#   for(j in 1:ncol(cwd.by.county.mat)){
+#     p[i,j] <- bern
+#   }
+# }
+
+## Specify data and initial values
+constants <- list(N = nrow(cwd.by.county.mat), M=adj.matrix, years=ncol(cwd.by.county.mat), S=wsi.mat, p=cwd.rate)
 data <- list(y = cwd.by.county.mat)
 inits <- list(beta0 = 0, beta1 = 0)
 cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
