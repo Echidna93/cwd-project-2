@@ -1,0 +1,78 @@
+```{r}
+library("rgdal")
+library("raster")
+library("sf")
+library("leafsync")
+library("dplyr")
+library("ggplot2")
+library("stars")
+library(spatialEco)
+library(spatstat.random)
+library(data.table)
+library(geoR)
+library(RColorBrewer)
+library(spdep)
+library(spatialreg)
+library(classInt)
+library(rgeos)
+library(landscapemetrics)
+library(nimble)
+library(coda)
+library(prism)
+library(terra)
+library(maps)
+library(raster)
+```
+```{r download prism data}
+# only run this if the prism data directory gets deleted
+prism_set_dl_dir('C:\\Users\\jackx\\Desktop\\prism-dat-f') # only set to create =TRUE if we need to download again
+get_prism_dailys(type="tmax",
+                 minDate="2006-11-01",
+                 maxDate="2022-05-31",
+                 keepZip = TRUE)
+
+
+```
+
+```{r}
+
+wiShp<-st_read("./data/shapefiles/Wisconsin_State_Boundary_24K/Wisconsin_State_Boundary_24K.shp")
+wiTwnshpShp <- st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+prism_set_dl_dir("C:\\Users\\jackx\\Desktop\\prism-dat-f", create=FALSE)
+#prism_get_dl_dir(path="C:\\Users\\jackx022\\Desktop\\prism-dat-f")
+pdStackRaw<-pd_stack(prism_archive_subset("tmin",
+                                          "daily",
+                                          mon=c(11, 12, 1, 2, 3, 4, 5),
+                                          years=1999))
+# make copy
+pdStackR <- pdStackRaw
+
+
+
+
+# wiShp<-st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+wiCountyShp <- st_read("./data/shapefiles/County_Boundaries_24K/County_Boundaries_24K.shp")
+
+crs(wiShp)
+```
+
+```{r}
+wiShp.e<-projectExtent(wiShp, pdStackR)
+# pdStackR<-transform(pdStackR,crs(wiCountySpat))
+# great now we have pdStackWI
+pdStackWI<-terra::crop(pdStackR, wiShp.e)
+# first let's get these into the same CRS
+wiTwnShpSpat<-as(wiTwnshpShp, "Spatial")
+# get the spat data into the same CRS
+wiTwnShpSpat<-spTransform(wiTwnShpSpat, CRS(pdStackR))
+# project to the same CRS
+wiTwnShpSpat<-spTransform(wiTwnShpSpat, crs(pdStackWI))
+# now we want to make a spatialPolygonsDataFrame
+tmin_by_twnshp <- terra::extract(pdStackWI, wiTwnShpSpat)
+wiTwnShpSpat$avg_tmin <- 0
+wiTwnshpShp$avg_tmin <- 0
+for(i in 1:nrow(wiTwnshpShp)){
+  wiTwnshpShp[i,]$avg_tmin = mean(tmin_by_twnshp[[i]])
+}
+plot(wiTwnshpShp[,14], max.plot=13)
+```

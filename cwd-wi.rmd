@@ -14,11 +14,12 @@ library(RColorBrewer)
 library(spdep)
 library(spatialreg)
 library(classInt)
-library(raster)
 library(rgeos)
 library(landscapemetrics)
 library(nimble)
 library(coda)
+library(prism)
+library(terra)
 ```
 
 
@@ -33,9 +34,7 @@ wiTwnshpShp <- st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
 #plot(wiCountyShp)
 
 #subset county data by the study area
-wiCountyStudy<-subset(wiCountyShp, COUNTY_FIP %in% unique(cwd.dat$fipsCode))
-
-
+wiCountyStudy<-subset(wiCountyShp, COUNTY_NAM %in% wi.small.subset)
 lc<-raster("./data/raster/WI_NLCD_2011/WI_NLCD_2011/nlcd_wi_utm16.tif")
 ## now we can use mask
 wiCountyStudy<-st_transform(wiCountyStudy, crs(wiShp))
@@ -64,55 +63,59 @@ cwd.dat.pos<-read.table(
 cwd.dat.analyzed<-read.table(
   "./data/cwd-dat-num-analyzed.csv",
   sep=",", header=TRUE)
-
-
-# wi.snow<-wi.snow[-73,]
-
-#wi.snow<-wi.snow[-1,]
-
-# counties Iowa, Sauk, Dane, Richland
-# neighboring counties
-# Columbia, Dodge, Jefferson, Rock, Green, Lafayette, Grant, Crawford, # Vernon, Monroe Juneau, Adams
-
-# let's subset this
+wi.wsi <- read.table("./data/WSI-MAST-CORRECTED.csv",
+                      header=TRUE, sep=",") 
 k<-1
+wi.small.subset <- c("Dane", "Columbia", "Dodge", "Jefferson", "Calumet", "Chippewa", "Crawford", "Eau Claire", "Iowa", "Richland", "Adams", "Walworth")
 
-# note that we are interested in the four counties which comprise the highest number
-# of total cases Iowa Sauk, Dane, Richland.
-# The remaining counties are their direct neighbors
+studyarea <- subset(studyarea, studyarea$COUNTY_NAM %in% wi.small.subset)
 
+# grab our prism data
+# first we need to set our path for where we want prism to store the data
+prism_set_dl_dir('C:\\Users\\jackx\\Desktop\\prism-dat-f') # only set to create =TRUE if we need to download again
+mnths <- c(11, 12, 1, 2, 3, 4, 5)
+yrs<-c(seq(1999, 2022, 1))
+get_prism_monthlys(type="ppt",
+                 mon=mnths,
+                 years=yrs,
+                 keepZip = TRUE)
 
-wi.cwd.area <- c("Iowa", "Sauk", "Dane", "Richland", "Columbia", "Dodge", "Jefferson", "Rock", "Green", "Lafayette", "Grant", "Crawford", "Vernon", "Monroe", "Juneau", "Adams")
+get_prism_dailys(type="ppt",
+                 minDate="2012-11-01",
+                 maxDate="2022-05-31",
+                 keepZip = TRUE)
+# note that this didn't finish tmax
+# get_prism_dailys(type="tmax",
+#                  minDate="1999-11-01",
+#                  maxDate="2022-05-31",
+#                  keepZip=TRUE)
 
-wi.small.subset <- c("Dane", "Columbia", "Dodge", "Jefferson")
+pdStackRaw<-pd_stack(prism_archive_subset("ppt",
+                        "monthly",
+                        mon=c(12, 1, 2, 3, 4),
+                        years=seq(1999, 2022, 1)))
+# pdPoly<-rasterToPolygons(pdStackRaw)
 
-cwd.dat.county.sep.sub <- cwd.dat.county.sep[cwd.dat.county.sep$county %in% wi.cwd.area,]
-
-# ggplot(cwd.dat.county.sep.sub, aes(x=cwd.dat.county.sep.sub$year, y=cwd.dat.county.sep.sub$npos, color=cwd.dat.county.sep.sub$county)) +
-#   geom_line() +
-#   scale_x_continuous(breaks=round(seq(min(wi.snow.sub$year), max(wi.snow.sub$year), by=1), 1))+
-#   theme(axis.text.x=element_text(angle=90, hjust=1))
-# 
-# ggplot(wi.snow.sub, aes(x=wi.snow.sub$year, y=log(wi.snow.sub$snowt), color=wi.snow.sub$county)) +
-#   geom_line() +
-#   scale_x_continuous(breaks=round(seq(min(wi.snow.sub$year), max(wi.snow.sub$year), by=1), 1))+
-#   theme(axis.text.x=element_text(angle=90, hjust=1))
-# 
-# ggplot(cwd.rate.of.change.sub, aes(x=cwd.rate.of.change.sub$year, y=cwd.rate.of.change.sub$X, color=cwd.rate.of.change.sub$county)) +
-#   geom_line() +
-#   scale_x_continuous(breaks=round(seq(min(cwd.rate.of.change.sub$year), max(cwd.rate.of.change.sub$year), by=1), 1))+
-#   theme(axis.text.x=element_text(angle=90, hjust=1))
+pdStackR <- pdStackRaw
 ```
 ```{r clean data}
 # remove NA values
 # cwd.dat<-na.omit(cwd.dat)
 yrs<-c(2002:2022)
 n.yrs <- length(yrs)
-# create UID 
-# FIPS - TWNSHP - RANGEID - RANGE DIR
+
+# let's work with the prism data
+# first we'll restrict the extent to approximately WI
+# 
+#     "name": "Wisconsin",
+#     "min_lat": 42.4954,
+#     "max_lat": 47.31,
+#     "min_lng": -92.8564,
+#     "max_lng": -86.2523
+#   },
+pdStackDF<-data.frame(rasterToPoints(pdStackR))
 
 
-cwd.dat$uid <- 0
 
 for(i in 1:nrow(cwd.dat.pos)){
   for(j in 1:ncol(cwd.dat.pos)){
@@ -129,76 +132,64 @@ for(i in 1:nrow(cwd.dat.analyzed)){
     }
   }
 }
-cwd.dat.pos$fid = 0
 cwd.dat.analyzed$fid <- 0
+cwd.dat.pos$fid <- 0
 for(i in 1:nrow(cwd.dat.pos)){
   for(j in 1:nrow(studyarea)){
     if(paste0(studyarea[j,]$COUNTY_FIP, "-",
                              studyarea[j,]$TWP, "-",
                              studyarea[j,]$RNG, "-",
                              studyarea[j,]$DIR_ALPHA) == cwd.dat.pos[i,]$uid){
-      cwd.dat.pos[i,]$fid <- studyarea[j,]$FID
+       cwd.dat.pos[i,]$fid <- studyarea[j,]$FID
+        cwd.dat.analyzed[i,]$fid <- studyarea[j,]$FID 
     }
   }
 }
 
-for(i in 1:nrow(cwd.dat.analyzed)){
-  for(j in 1:nrow(studyarea)){
-    if(paste0(studyarea[j,]$COUNTY_FIP, "-",
+studyarea$uid <- 0
+for(j in 1:nrow(studyarea)){
+    studyarea[j,]$uid <- paste0(studyarea[j,]$COUNTY_FIP, "-",
                              studyarea[j,]$TWP, "-",
                              studyarea[j,]$RNG, "-",
-                             studyarea[j,]$DIR_ALPHA) == cwd.dat.pos[i,]$uid){
-      cwd.dat.analyzed[i,]$fid <- studyarea[j,]$FID
+                             studyarea[j,]$DIR_ALPHA)
+
     }
-  }
-}
 
-
-studyarea <- studyarea[-c(which(!c(studyarea$FID) %in% c(cwd.dat.pos$fid))),]
-studyarea <- studyarea[-c(which(duplicated(studyarea$FID))),] # get rid of duplicates
-cwd.dat.pos <- cwd.dat.pos[-c(which(duplicated(cwd.dat.pos$fid))),]
-cwd.dat.analyzed <- cwd.dat.analyzed[-c(which(duplicated(cwd.dat.analyzed$fid))),]
-cwd.dat.pos<-cwd.dat.pos[-c(which(cwd.dat.pos$fid==0)),] # get rid of those without matching spatial fid
+studyarea <- studyarea[-c(which(!c(studyarea$uid) %in% c(cwd.dat.pos$uid))),]
+# # studyarea <- studyarea[-c(duplicated(studyarea$FID)),] # get rid of duplicates
+# cwd.dat.pos <- cwd.dat.pos[-c(duplicated(cwd.dat.pos$fid)),]
+# cwd.dat.analyzed <- cwd.dat.analyzed[-c(duplicated(cwd.dat.analyzed$fid))),]
+cwd.dat.pos<-cwd.dat.pos[-c(which(cwd.dat.pos$fid == 0)),] # get rid of those without matching spatial fid
 cwd.dat.analyzed<-cwd.dat.analyzed[-c(which(cwd.dat.analyzed$fid==0)),]
-studyarea<-arrange(studyarea, studyarea$FID)
-cwd.dat.pos<-arrange(cwd.dat.pos, cwd.dat.pos$fid)
-cwd.dat.analyzed<-arrange(cwd.dat.analyzed, cwd.dat.analyzed$fid)
+studyarea<-arrange(studyarea, studyarea$uid)
+cwd.dat.pos<-arrange(cwd.dat.pos, cwd.dat.pos$uid)
+cwd.dat.analyzed<-arrange(cwd.dat.analyzed, cwd.dat.analyzed$uid)
 
 cwd.mat<-matrix(0, nrow=length(unique(cwd.dat.pos$fid)), ncol=n.yrs)
 cwd.mat.anlyzd <- cwd.mat
-sites<-unique(cwd.dat$fid)
 
 cwd.mat <- as.matrix(cwd.dat.pos[,-1])
 cwd.mat <- cwd.mat[,-ncol(cwd.mat)]
 cwd.mat.anlyzd <- as.matrix(cwd.dat.analyzed[,-1])
 cwd.mat.anlyzd <- cwd.mat.anlyzd[,-ncol(cwd.mat.anlyzd)]
-# aggregate over site
-# TODO write to a new sheet in our directory then push to git
 
-
-
-
-# k<-1
-# for(i in 1:nrow(cwd.dat.pos)){
-#   for(j in 2:length(n.yrs-1)){
-#         cwd.mat[i,k] = cwd.dat.pos[i,j]
-#         cwd.mat.anlyzd[i,k] = cwd.dat.analyzed[i,j] 
-#         k = k + 1
-#         }
-# }
-# k<-1
-# }
-
-
-# use this as our grand expec
+for(i in 1:nrow(cwd.mat)){
+  for(j in 1:ncol(cwd.mat)){
+    if(is.na(cwd.mat[i,j])){
+      cwd.mat[i,j] = 0
+    }
+  }
+}
 ```
 
 ```{r, calculate landscape stats twnshp}
 studyarea.spat<-as(studyarea, "Spatial")
 studyarea.spat<-spTransform(studyarea.spat, crs(lc))
+lc<-crop(lc, studyarea.spat)
+
 # studyarea<-st_as_sf(studyarea) # convert back to sf object
 prop.evrgrn <- c() 
-lc.evrgrn <- lc.studyarea == 42
+lc.evrgrn <- lc == 42
 # studyarea<-as(studyarea, "Spatial")
 for(i in 1:nrow(studyarea.spat)){
   evrgrn <-crop(lc.evrgrn,extent(bbox(studyarea.spat[i,])))
@@ -206,6 +197,9 @@ for(i in 1:nrow(studyarea.spat)){
 }
 
 ```
+
+
+
 
 
 
@@ -276,6 +270,105 @@ cwd.mat.analyzed <- read.table("cwd.analyzed")
 
 ANALYSIS
 
+```{r, examine residuals}
+
+cwd.r <- c(rep(0,ncol(cwd.mat.pos)))
+for(i in 1:ncol(cwd.mat.pos)){
+  cwd.r[i] <- sum(cwd.mat.pos[,i])/sum(cwd.mat.analyzed[,i])
+}
+
+cwd.exp <- cwd.r * cwd.mat.analyzed
+cwd.resid <- (cwd.mat.pos) - (cwd.exp)
+
+wi.wsi.sub<-subset(wi.wsi, wi.wsi$name %in% wi.small.subset)
+wi.wsi.sub<-wi.wsi.sub[,-c(1:4)]
+# wi.wsi.sub<-wi.wsi.sub[,-c(ncol(wi.wsi.sub))]
+#wi.wsi.sub<-wi.wsi.sub[,-ncol(wi.wsi.sub)]
+wi.wsi.mat <- matrix(0, ncol=n.yrs, nrow=(nrow(cwd.resid)))
+twnshpcount <- c()
+twnshps <- unique(studyarea$COUNTY_NAM)
+k <- 1
+for(i in 1:length(twnshps)){
+  twnshpcount[k] <- length(which(studyarea$COUNTY_NAM == twnshps[i]))
+  k<-k+1
+}
+wsi.vec <- c()
+l<- 1
+for(i in 1:length(twnshpcount)){
+    twnshpdat <- rep(wi.wsi.sub[i,], twnshpcount[i])
+  for(k in 1:length(twnshpdat)){
+    wsi.vec[l] <- twnshpdat[[k]]
+    l <- l + 1
+    }
+}
+resid.vec <- c()
+prop.evrgrn.exp <- c()
+cwd.tot <- c()
+k<-1
+for(i in 1:nrow(cwd.resid)){
+  for(j in 1:ncol(cwd.resid)){
+    resid.vec[k] <- cwd.resid[i,j]
+    cwd.tot[k] <- cwd.mat[i,j]
+    prop.evrgrn.exp[k] <- prop.evrgrn[i]
+    k <- k + 1
+  }
+}
+bd.ind <- which(resid.vec==0)
+resid.vec <- resid.vec[-c(bd.ind)]
+cwd.tot <- cwd.tot[-c(bd.ind)]
+wsi.vec <- wsi.vec[-c(bd.ind)]
+prop.evrgrn.exp<- prop.evrgrn.exp[-c(bd.ind)]
+
+
+
+# #resid.vec<-as.vector(cwd.resid)
+resid.vec <- resid.vec + 1
+prop.evrgrn.exp <- prop.evrgrn.exp + 1
+cwd.tot <- cwd.tot + 1
+wsi.vec <- wsi.vec + 1
+
+tot<-cbind(resid.vec, cwd.tot, prop.evrgrn.exp, wsi.vec)
+tot.df<-as.data.frame(tot)
+
+tot.df$resid.vec <- log(tot.df$resid.vec)
+tot.df$prop.evrgrn.exp <- log(tot.df$prop.evrgrn.exp)
+tot.df$wsi.vec  <- log(tot.df$wsi.vec)
+
+tot.df$bin <- cut(tot.df$wsi.vec, c(seq(from = min(tot.df$wsi.vec), to = max(tot.df$wsi.vec), by = 0.2)))
+
+ggplot(tot.df) + geom_boxplot(aes(bin, resid.vec))
+  
+
+# plot(log(resid.vec)~ log(prop.evrgrn.exp))
+# abline(lm(log(resid.vec) ~ log(prop.evrgrn.exp)), col="red")
+# plot(log(resid.vec) ~ log(wsi.vec))
+# abline(lm(log(resid.vec) ~ log(wsi.vec)), col="red")
+# # we can also look at the totals
+# plot(cwd.tot~ prop.evrgrn.exp)
+# abline(lm(cwd.tot ~ prop.evrgrn.exp), col="red")
+# plot(cwd.tot ~ wsi.vec)
+# abline(lm(cwd.tot ~ wsi.vec), col="red")
+
+cwd.exp.vec <- c()
+cwd.tot <- c()
+k<-1
+for(i in 1:nrow(cwd.resid)){
+  for(j in 1:ncol(cwd.resid)){
+    cwd.exp.vec[k] <- cwd.exp[i,j]
+    cwd.tot[k] <- cwd.mat.pos[i,j]
+    # prop.evrgrn.exp[k] <- prop.evrgrn[i]
+    k <- k + 1
+  }
+}
+
+exp<-cwd.exp.vec + wsi.vec
+
+# resid.vec <- as.vector(cwd.resid)
+#cwd.tot <- as.vector(cwd.mat.pos
+plot(log(cwd.exp.vec)~log(cwd.tot))
+abline(a=0,b=1, col="red")
+```
+
 ```{r evaluate temporal autocorrelation}
 tmp.corr<-list()
 # we need to remove the sites with zero observations
@@ -322,39 +415,6 @@ for(i in 1:length(mods)){
 
 hist(ars)
 ```
-
-```{r}
-n.evergreen <- rep(0, nrow(wiTwnshpShp))
-evergreen.clumps <- rep(0, nrow(wiTwnshpShp))
-cwd.pos <- rep(0, nrow(wiTwnshpShp))
-for(i in 1:nrow(wiTwnshpShp)){
- twnshp<-crop(lc.evergreen, wiTwnshpShp[i,])
- clump<-lsm_c_clumpy(twnshp)
-   evergreen.clumps[i] <- if(!is.null(clump[2,]$value)) clump[2,]$value else 2
- for(j in 1:nrow(twnshp)){
-   n.evergreen[i] = n.evergreen[i] + sum(twnshp[j,])
-   }
-}
-wiTwnshpShp$n.evergrn <- n.evergreen
-wiTwnshpShp$cwd.pos <- 0
-wiTwnshpShp$evergreen.clump <- evergreen.clumps
-cwd.dat <- na.omit(cwd.dat)
-for(i in 1:nrow(wiTwnshpShp)){
-  for(j in 1:nrow(cwd.dat)){
-    if(wiTwnshpShp[i,]$TWP == cwd.dat[j,]$township &
-       wiTwnshpShp[i,]$RNG == cwd.dat[j,]$range){
-          cwd.pos[i] = cwd.pos[i] + cwd.dat[j,]$cwdPositive
-        }
-      }
-}
-wiTwnshpShp$cwd.pos <- cwd.pos
-wiTwnshpShp.subset<-subset(wiTwnshpShp, cwd.pos > 0)
-plot(wiTwnshpShp.subset$cwd.pos~wiTwnshpShp.subset$evergreen.clump)
-wisf<-st_as_sf(wiTwnshpShp)
-ggplot(wisf$geometry, aes(fill=wisf$evergreen.clump)) + 
-  geom_sf()
-```
-
 
 ```{r, CAR model}
 wi.coords <- coordinates(as(studyarea, "Spatial"))
@@ -448,8 +508,8 @@ modelcode <- nimbleCode({
         # our expectation can simply be the average of the given sampling unit over the study period
        # why not try the average for particular year across all sampling units -- later we can try to make it the average across across a cluster of sampling units
         # WSI is our WSI index for a particular county in year i
-        log(mu[i,j]) <-  log(s[i,j]*mu.hat) + beta0 
-        logit(p[i,j]) <- log(s[i,j]*mu.hat) + gamma0
+        log(mu[i,j]) <-  log(s[i,j]*mu.hat[j]) + beta0 
+        logit(p[i,j]) <- log(s[i,j]*mu.hat[j]) + gamma0
         y[i,j] ~ dZIP(mu[i,j], p[i,j])
         }
   }
@@ -464,7 +524,7 @@ p <- matrix(0, nrow=nrow(cwd.mat.anlyzd), ncol=ncol(cwd.mat.anlyzd))
 constants <- list(n.twnshps = nrow(cwd.mat.anlyzd),
                   p=p,
                   mu.hat=cwd.r,
-                  n.years=ncol(cwd.m))
+                  n.years=n.yrs)
 data <- list(y = cwd.mat.pos, s = cwd.mat.analyzed)
 inits <- list(beta0 = 0, gamma0 = 0)
 
@@ -566,7 +626,7 @@ constants <- list(n.twnshps = nrow(cwd.mat.anlyzd),
                   adj=W$adj,
                   weights=W$weights,
                   num=W$num,
-                  n.years=ncol(cwd.m))
+                  n.years=n.yrs)
 data <- list(y = cwd.mat.pos, s = cwd.mat.analyzed, prop.evrgrn=prop.evrgrn)
 inits <- list(beta0 = 0, beta1=0, gamma1=0, gamma0 = 0, prec.h = 1, prec.hi = 1)
 
@@ -602,8 +662,6 @@ year.samp <- c(2002, 2003, 2004,2006,2007, 2008, 2009, 2010, 2011, 2012, 2013,
 
 ```{r, clean WSI data}
 
-wi.wsi <- read.table("./data/WSI-MAST-CORRECTED.csv",
-                      header=TRUE, sep=",") 
 wsi.sub <- wi.wsi[wi.wsi$name %in% c("Iowa", "Sauk", "Dane", "Richland", "Columbia", "Dodge", "Jefferson", "Rock", "Green", "Lafayette", "Grant", "Crawford", "Vernon", "Monroe", "Juneau", "Adams"),]
 wsi.sub <- wsi.sub[,-1]
 wsi.mat <- as.matrix(wsi.sub)

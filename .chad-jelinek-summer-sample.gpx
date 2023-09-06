@@ -1,0 +1,108 @@
+<?xml version="1.0"?>
+<gpx version="1.1" creator="GDAL 3.5.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:ogr="http://osgeo.org/gdal" xmlns="http://www.topografix.com/GPX/1/1" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+<metadata><bounds minlat="39.943216928927939" minlon="-77.717352648774778" maxlat="39.946984964447516" maxlon="-77.712966218636325"/></metadata>                
+<wpt lat="39.943263939526588" lon="-77.715176867651707">
+  <extensions>
+    <ogr:cell>62013.0</ogr:cell>
+    <ogr:x>268026.193116683687549</ogr:x>
+    <ogr:y>4424990.446393284015357</ogr:y>
+    <ogr:nlcd.landcover.PA>21.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+<wpt lat="39.943455675100225" lon="-77.717352648774778">
+  <extensions>
+    <ogr:cell>58079.0</ogr:cell>
+    <ogr:x>267840.927006979298312</ogr:x>
+    <ogr:y>4425017.394191059283912</ogr:y>
+    <ogr:nlcd.landcover.PA>22.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+<wpt lat="39.943338730517375" lon="-77.715869705802447">
+  <extensions>
+    <ogr:cell>60544.0</ogr:cell>
+    <ogr:x>267967.244809050462209</ogr:x>
+    <ogr:y>4425000.551817449741066</ogr:y>
+    <ogr:nlcd.landcover.PA>22.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+<wpt lat="39.943216928927939" lon="-77.716535053954047">
+  <extensions>
+    <ogr:cell>62183.0</ogr:cell>
+    <ogr:x>267909.980738778191153</ogr:x>
+    <ogr:y>4424988.762155923061073</ogr:y>
+    <ogr:nlcd.landcover.PA>22.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+<wpt lat="39.943236623162846" lon="-77.716989182099709">
+  <extensions>
+    <ogr:cell>61682.0</ogr:cell>
+    <ogr:x>267871.243279476359021</ogr:x>
+    <ogr:y>4424992.130630644969642</ogr:y>
+    <ogr:nlcd.landcover.PA>22.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+<wpt lat="39.946269707931748" lon="-77.715749145384237">
+  <extensions>
+    <ogr:cell>14429.0</ogr:cell>
+    <ogr:x>267987.455657381855417</ogr:x>
+    <ogr:y>4425325.609628112055361</ogr:y>
+    <ogr:nlcd.landcover.PA>43.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+<wpt lat="39.945181856229425" lon="-77.712966218636325">
+  <extensions>
+    <ogr:cell>32732.0</ogr:cell>
+    <ogr:x>268221.564650553802494</ogr:x>
+    <ogr:y>4425197.607588680461049</ogr:y>
+    <ogr:nlcd.landcover.PA>43.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+<wpt lat="39.94666288493778" lon="-77.715804127085917">
+  <extensions>
+    <ogr:cell>8213.0</ogr:cell>
+    <ogr:x>267984.087182659946848</ogr:x>
+    <ogr:y>4425369.399799496866763</ogr:y>
+    <ogr:nlcd.landcover.PA>43.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+<wpt lat="39.943648094724821" lon="-77.71367432165809">
+  <extensions>
+    <ogr:cell>56593.0</ogr:cell>
+    <ogr:x>268155.879393476760015</ogr:x>
+    <ogr:y>4425029.183852585963905</ogr:y>
+    <ogr:nlcd.landcover.PA>81.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+<wpt lat="39.943999126222039" lon="-77.716822255005752">
+  <extensions>
+    <ogr:cell>49742.0</ogr:cell>
+    <ogr:x>267888.08565308584366</ogr:x>
+    <ogr:y>4425076.342498692683876</ogr:y>
+    <ogr:nlcd.landcover.PA>81.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+<wpt lat="39.946984964447516" lon="-77.715008684527618">
+  <extensions>
+    <ogr:cell>3474.0</ogr:cell>
+    <ogr:x>268053.140914458897896</ogr:x>
+    <ogr:y>4425403.084546715952456</ogr:y>
+    <ogr:nlcd.landcover.PA>81.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+<wpt lat="39.945549269499665" lon="-77.713473528989013">
+  <extensions>
+    <ogr:cell>26732.0</ogr:cell>
+    <ogr:x>268179.458716530061793</ogr:x>
+    <ogr:y>4425239.713522704318166</ogr:y>
+    <ogr:nlcd.landcover.PA>81.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+<wpt lat="39.944735469617271" lon="-77.71647688804515">
+  <extensions>
+    <ogr:cell>38289.0</ogr:cell>
+    <ogr:x>267920.086162943916861</ogr:x>
+    <ogr:y>4425157.185892017558217</ogr:y>
+    <ogr:nlcd.landcover.PA>81.0</ogr:nlcd.landcover.PA>
+  </extensions>
+</wpt>
+</gpx>
