@@ -1,0 +1,108 @@
+<?xml version="1.0"?>
+<gpx version="1.1" creator="GDAL 3.5.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:ogr="http://osgeo.org/gdal" xmlns="http://www.topografix.com/GPX/1/1" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+<metadata><bounds minlat="44.992807142806640" minlon="-92.619621936080136" maxlat="45.000095809044083" maxlon="-92.611358860377436"/></metadata>                
+<wpt lat="44.998835810466119" lon="-92.61948002054163">
+  <extensions>
+    <ogr:cell>12054.0</ogr:cell>
+    <ogr:x>529991.402659498038702</ogr:x>
+    <ogr:y>4982891.494227243587375</ogr:y>
+    <ogr:clipped.area>41.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+<wpt lat="44.997927586946233" lon="-92.619366076165505">
+  <extensions>
+    <ogr:cell>19769.0</ogr:cell>
+    <ogr:x>530000.857339067733847</ogr:x>
+    <ogr:y>4982790.644311833195388</ogr:y>
+    <ogr:clipped.area>41.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+<wpt lat="44.995516978590722" lon="-92.619621936080136">
+  <extensions>
+    <ogr:cell>40248.0</ogr:cell>
+    <ogr:x>529981.947979928343557</ogr:x>
+    <ogr:y>4982522.761724025011063</ogr:y>
+    <ogr:clipped.area>43.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+<wpt lat="44.993213844149039" lon="-92.61807787648182">
+  <extensions>
+    <ogr:cell>59808.0</ogr:cell>
+    <ogr:x>530104.858814334496856</ogr:x>
+    <ogr:y>4982267.485375643707812</ogr:y>
+    <ogr:clipped.area>43.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+<wpt lat="44.999885614767408" lon="-92.619513058424573">
+  <extensions>
+    <ogr:cell>3136.0</ogr:cell>
+    <ogr:x>529988.251099641551264</ogr:x>
+    <ogr:y>4983008.101941936649382</ogr:y>
+    <ogr:clipped.area>43.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+<wpt lat="45.000095809044083" lon="-92.614513327553041">
+  <extensions>
+    <ogr:cell>1333.0</ogr:cell>
+    <ogr:x>530382.196081712259911</ogr:x>
+    <ogr:y>4983033.314420788548887</ogr:y>
+    <ogr:clipped.area>43.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+<wpt lat="44.99280714280664" lon="-92.615241880688117">
+  <extensions>
+    <ogr:cell>63253.0</ogr:cell>
+    <ogr:x>530328.619564150692895</ogr:x>
+    <ogr:y>4982223.363537651486695</ogr:y>
+    <ogr:clipped.area>71.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+<wpt lat="44.994438670819861" lon="-92.619549103978642">
+  <extensions>
+    <ogr:cell>49408.0</ogr:cell>
+    <ogr:x>529988.251099641551264</ogr:x>
+    <ogr:y>4982403.002449476160109</ogr:y>
+    <ogr:clipped.area>81.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+<wpt lat="44.997027715337552" lon="-92.613294377035459">
+  <extensions>
+    <ogr:cell>27392.0</ogr:cell>
+    <ogr:x>530479.894437265815213</ogr:x>
+    <ogr:y>4982692.945956279523671</ogr:y>
+    <ogr:clipped.area>82.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+<wpt lat="44.99716440788027" lon="-92.611774039849095">
+  <extensions>
+    <ogr:cell>26225.0</ogr:cell>
+    <ogr:x>530599.653711815364659</ogr:x>
+    <ogr:y>4982708.703755563125014</ogr:y>
+    <ogr:clipped.area>82.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+<wpt lat="44.993226068406415" lon="-92.613279962508216">
+  <extensions>
+    <ogr:cell>59687.0</ogr:cell>
+    <ogr:x>530483.045997122419067</ogr:x>
+    <ogr:y>4982270.636935500428081</ogr:y>
+    <ogr:clipped.area>82.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+<wpt lat="44.995779593468228" lon="-92.613342755371235">
+  <extensions>
+    <ogr:cell>37995.0</ogr:cell>
+    <ogr:x>530476.742877409327775</ogr:x>
+    <ogr:y>4982554.277322591282427</ogr:y>
+    <ogr:clipped.area>82.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+<wpt lat="44.999432605330803" lon="-92.611358860377436">
+  <extensions>
+    <ogr:cell>6955.0</ogr:cell>
+    <ogr:x>530631.169310381053947</ogr:x>
+    <ogr:y>4982960.828544087707996</ogr:y>
+    <ogr:clipped.area>95.0</ogr:clipped.area>
+  </extensions>
+</wpt>
+</gpx>

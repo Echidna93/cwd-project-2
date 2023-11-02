@@ -1,0 +1,38 @@
+---
+title: "Generate Figures"
+author: "Alexander Jack"
+date: "2023-09-22"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+```{r, load data}
+cwdMatPos<-read.table("cwd.pos")
+```
+```{r, histogram}
+k<-1
+cwd.vec <- c()
+for(i in 1:nrow(cwdMatPos)){
+  for(j in 1:ncol(cwdMatPos)){
+    cwd.vec[k] <- cwdMatPos[i,j]
+    k <- k + 1
+  }
+}
+county_subset<-c("Dane", "Columbia", "Dodge", "Jefferson", "Calumet", "Chippewa", "Crawford", "Eau Claire", "Iowa", "Richland", "Adams", "Walworth")
+
+hist(cwd.vec, breaks=length(unique(cwd.vec)),
+     main="CWD Cases in Southern Wisconsin (2002-2022)",
+     xlab="Number of Cases",
+     ylab="Frequency",
+     caption="Dane")
+
+cwd.vec.nz<-cwd.vec[cwd.vec!=0]
+hist(cwd.vec.nz, breaks=length(unique(cwd.vec.nz)),
+     main="CWD Cases in Southern Wisconsin (2002-2022)",
+     xlab="Number of Cases",
+     ylab="Frequency")
+# caption("Dane, Columbia, Dodge, Jefferson, Calumet, Chippewa, Crawford, Eau Claire, Iowa, Richland, Adams, Walworth", add=TRUE)
+
+```

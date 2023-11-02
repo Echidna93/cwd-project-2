@@ -28,6 +28,7 @@ library(terra)
 cwd.dat<-read.table(
   "./data/wi-dat.csv",
   sep=",", header=TRUE)
+wi.small.subset <- c("Dane", "Columbia", "Dodge", "Jefferson", "Calumet", "Chippewa", "Crawford", "Eau Claire", "Iowa", "Richland", "Adams", "Walworth")
 wiShp<-st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
 wiCountyShp <- st_read("./data/shapefiles/County_Boundaries_24K/County_Boundaries_24K.shp")
 wiTwnshpShp <- st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
@@ -66,8 +67,6 @@ cwd.dat.analyzed<-read.table(
 wi.wsi <- read.table("./data/WSI-MAST-CORRECTED.csv",
                       header=TRUE, sep=",") 
 k<-1
-wi.small.subset <- c("Dane", "Columbia", "Dodge", "Jefferson", "Calumet", "Chippewa", "Crawford", "Eau Claire", "Iowa", "Richland", "Adams", "Walworth")
-
 studyarea <- subset(studyarea, studyarea$COUNTY_NAM %in% wi.small.subset)
 
 # grab our prism data
@@ -963,3 +962,26 @@ summary(post.samples[,pars])
 ## model assessment using WAIC value
 MCMC.out$WAIC
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
