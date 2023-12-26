@@ -1,0 +1,849 @@
+---
+title: "prepare-data"
+author: "Alexander Jack"
+date: "2023-11-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r, echo=FALSE}
+library("rgdal")
+library("raster")
+library("sf")
+library("leafsync")
+library("dplyr")
+library("ggplot2")
+library("stars")
+library(spatialEco)
+library(spatstat.random)
+library(data.table)
+library(geoR)
+library(RColorBrewer)
+library(spdep)
+library(spatialreg)
+library(classInt)
+library(rgeos)
+library(landscapemetrics)
+library(nimble)
+library(coda)
+library(prism)
+library(terra)
+library(maps)
+library(raster)
+library(rnoaa)
+library(stringr)
+```
+```{r load data, echo=FALSE}
+wiShp<-st_read("./data/shapefiles/Wisconsin_State_Boundary_24K/Wisconsin_State_Boundary_24K.shp")
+wiTwnshpShp <- st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+# wiShp<-st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+wiCountyShp <- st_read("./data/shapefiles/County_Boundaries_24K/County_Boundaries_24K.shp")
+# use this for setting the directory for prism
+#prism_set_dl_dir("C:\\Users\\jackx\\Desktop\\prism-dat-f", create=FALSE)
+# wiscland landcover raster
+# nwiLC<-rast("./data/raster/wiscland2/wiscland2_dataset/level4/wiscland2_level4.tif")
+# raw cwd data from google drive sheets
+# cwd.dat.pos<-read.table(
+#   "./data/wi-dat-cwd-pos.csv",
+#   sep=",", header=TRUE)
+# # raw cwd data from google drive sheets
+# cwd.dat.analyzed<-read.table(
+#   "./data/cwd-dat-num-analyzed.csv",
+#   sep=",", header=TRUE)
+# TODO also need to write the study shp
+# cwdMatPos<-read.table("cwd.pos")
+# cwdMatAnalyzed <- read.table("cwd.analyzed")
+ WIDat<-read.table(
+  "./data/WIData.csv",
+  sep=",", header=TRUE)
+
+prismPPTStudy <- read.table("prism.ppt.study.area")
+wsi.mat<-read.table("./data/wsicalculated") # this is the standard WSI used by WDNR 
+wsi.mat.late <- read.table("./wsiMatLate")
+year_min = 2001
+year_max = 2021
+wsi.years <- seq(year_min, year_max, 1)
+
+station_radius = 30 # km 
+station_data=ghcnd_stat
+  (var="SNWD") # grab ghncd stations
+# these calls can be used to get fresh PRISM data
+# get_prism_dailys(type="ppt",
+#                 minDate="2018-01-01",
+#                 maxDate="2022-05-31", 
+#                 keepZip = TRUE)
+# get_prism_dailys(type="tmax",
+#                  minDate="2000-11-01",
+#                  maxDate="2022-05-31",
+#                  keepZip = TRUE)
+# get_prism_dailys(type="tmin",
+#                  minDate="2000-11-01",
+#                  maxDate="2022-05-31",
+#                  keepZip = TRUE)
+#prism_get_dl_dir(path="C:\\Users\\jackx022\\Desktop\\prism-dat-f")
+
+```
+```{r get list of all townships uids by county}
+wiCountyShp<-st_transform(wiCountyShp, st_crs(wiTwnshpShp)) # project to same CRS
+# get the uid field I use to get unique townshps
+wiTwnshpShp <- wiTwnshpShp %>% mutate(uid = paste0(TWP, "-", RNG, "-", DIR_ALPHA))
+# get the intersection
+wiCountyTwnshps <- st_intersection(wiCountyShp, wiTwnshpShp)
+```
+```{r}
+#https://apps.dnr.wi.gov/deermetrics/DeerStats.aspx?R=2
+# post-hunt pop. estimates
+# 2007 - 2022
+dane <- c(23900, 17500, 16800, 18900, 15400, 17100, 18900, 17400, 17700, 18500, 16700, 22300, 20700, 26200, 20800, 22700)
+iowa <- c(25800, 18600, 18100, 20700, 16900, 17300, 18600, 20400, 21700, 24500, 20400, 26700, 22500, 27500, 20900, 20100)
+sauk <- c(21700, 20200, 17900, 21200, 18200, 18700, 20500, 25200, 29600, 29500, 29000, 37100, 30200, 38900, 34400, 35100)
+green <- c(11200, 7900, 8500, 8200, 7700, 8300, 9200, 8400, 9500, 10100, 8300, 11600, 10400, 10400, 13900, 11700, 11700)
+columbia <- c(16900, 18200, 14200, 15100, 16100, 16300, 16000, 20400, 22700, 25400, 28400, 31300, 29900, 35400, 32500, 32700)
+grant <- c(25600, 23000, 21200, 21600, 18600, 20800, 20400, 20700, 23000, 26300, 23800, 31600, 27800, 35400, 29400, 28700)
+jefferson <- c(11800, 9200, 8600, 9200, 9100, 9600, 10100, 8500, 7900, 7000, 10100, 10900, 11000, 13700, 14000, 13400)
+lafayette <- c(15200, 12700, 12400, 11400, 9400, 9300, 9000, 8700, 9900, 10300, 8300, 12400, 10200, 12300, 10400, 10600)
+adams.cf <- c(19900, 16100, 10500, 13700, 12800, 14200, 13000, 15400, 16700, 19300, 18300, 19900, 15800,
+              20000, 20000, 23200)
+adams.cfarm <- c(2900, 2900, 3100, 3800, 4700, 4600, 4200, 4900, 5000, 5400, 5300, 6300, 6400, 8200, 7300, 8800)
+marquette <- c(16100, 14200, 13500, 15100, 18400, 18500, 16300, 19800, 22300, 22400, 22900, 26300, 23400, 26900, 27800, 26300)
+ozaukee <-c(1700, 1600, 1600, 1700, 2000, 2400, 2500, 3400, 4000, 4000, 3700, 3700, 4100, 4500, 4200, 4800)
+walworth <-c(8500, 8500, 8800, 6800, 6800, 7000, 7100, 5300, 5200, 5900, 4500, 5800, 5900, 7700, 7300, 8600)
+waukesha <- c(9600, 9300, 10100, 9000, 9900, 10800, 10700, 10300, 10200, 10600, 8000, 9200, 10800, 12000, 12000, 11800)
+rock<-c(12100, 9200, 8600, 8800, 8800, 8900, 10000, 7400, 6800, 6000, 7000, 8900, 8800, 10800, 9800, 9800)
+kenosha<-c(3700, 4000, 4000, 3200, 2600, 2800, 3000, 2200, 2100, 1900, 1200, 1600, 1500, 2000, 2000, 2300)
+greenLake <-c(9000, 8200, 8700, 9800, 11700, 13000, 11000, 13100, 16100, 14500, 14700, 14800, 13200, 16200, 16500, 16300)
+richland<-c(16800, 22100, 20200, 20300, 16600, 16600, 17900, 22300, 30400, 29500, 26200, 32300, 27100, 35900, 30000, 30600)
+juneau<-c(16400, 13000, 8800, 11100, 10300, 11500, 10000, 7400, 8600, 9100, 11500, 12700, 8700, 10300, 10400, 1200)
+vernon<-c(20000, 19500, 17600, 18800, 19400, 23000, 22200, 23400, 26800, 26600, 26300, 34700, 30100, 40200, 36500, 37000)
+crawford<-c(18800, 17400, 16100, 14800, 16100, 18300, 16000, 16600, 20000, 1100, 15800, 21100, 16700, 23100, 21400, 22600)
+dodge<-c(12200, 10500, 10900, 11500, 12100, 13000, 11000, 13400, 13700, 14100, 16500, 17700, 16700, 21500, 20300, 21700)
+milwaulkee<-c(900,900,900,900,1100,1300,1400,600, 1000, 700, 900, 800, 1000, 1000, 900, 1000)
+washington<-c(5700, 5200, 5300, 6000, 6400, 7500, 7300, 8000, 8200, 7700, 9600, 9500, 9300, 11300, 11400, 11900)
+sheboygan<-c(6100, 4800, 4500, 5800, 6600, 7900, 7500, 6900, 7800, 8400, 10800, 11400, 9900, 12800, 12600, 12900)
+racine<-c(4000, 4400, 4300, 3500, 2800, 3000, 3200, 2800, 3200, 3000, 2000, 2200, 2500, 3000, 3000, 3500)
+
+
+adams <- adams.cf + adams.cfarm
+# rbind things together
+
+popDat <- rbind(dane,
+                iowa,
+                sauk,
+                green,
+                columbia,
+                grant,
+                jefferson,
+                lafayette,
+                adams,
+                marquette,
+                ozaukee,
+                walworth,
+                waukesha,
+                rock,
+                kenosha,
+                greenLake,
+                richland,
+                juneau,
+                vernon,
+                crawford,
+                dodge,
+                milwaulkee,
+                washington,
+                sheboygan,
+                racine)
+
+# now I need to intersect these data with the townships
+
+
+```
+
+
+
+```{r clean WIData}
+nonSampYear<-c("1999-2001","2002", "2003", "2004", "2005", "2006")
+# change age to scalar
+WIDatClean <- data.frame()
+# WIDatClean$barCode <- NA
+# WIDatClean$sex <- NA
+# WIDatClean$township <- NA
+# WIDatClean$uid <- NA 
+# WIDatClean$hunterType <- NA
+# WIDatClean$sickDeer <- NA
+# WIDatClean$year <- NA
+# WIDatClean$ageClass <- NA
+# WIDatClean$range <- NA
+# WIDatClean$killMethod <- NA
+# WIDatClean$result <- NA
+# WIDatClean$killDate <- NA
+# WIDatClean$county <- NA
+# WIDatClean$rangeDirection <- NA
+# WIDatClean$nuisance <- NA
+WIDatClean <- WIDat %>% mutate(Age = str_replace_all(Age, c("3" = "A", "9 to 11" = "A", "6 to 8" = "A", "4 to 5" = "A", "12\\+" = "A", "ADULT" = "A", "F" = "J", "1" = "Y", "2" = "Y")))
+WIDatClean <- WIDatClean %>% mutate(Range.Direction = str_replace_all(Range.Direction, c("East" = "E", "West" = "W")))
+# make UID to match previous analysis
+WIDatClean <- WIDatClean %>% mutate(uid = paste0(Township, "-", Range, "-", Range.Direction))
+# first aggregate over the cases
+
+WIDatCleanSum <- WIDatClean %>% group_by(CWD.Year, County, uid, Test.Result) %>% summarise(n=n(), .groups='drop')
+WIDatCleanSum <- WIDatCleanSum[-c(which(WIDatCleanSum$CWD.Year=="1999-2001")),] # remove 1999-2001
+# to delete later
+# remove 2002-2006
+WIDatCleanSum <- WIDatCleanSum[-c(which(WIDatCleanSum$CWD.Year %in% c("2002", "2003", "2004", "2005", "2006"))),]
+
+# NEED dataframe with all twnshps per study county per year
+studyCounties<-unique(WIDatClean$County)
+studyTwnshps <- unique(wiCountyTwnshps[c(which(wiCountyTwnshps$COUNTY_NAM %in% studyCounties)),])$uid
+
+WIStudyDat <- expand.grid(twnshp = studyTwnshps, year=unStuique(WIDatCleanSum$CWD.Year))
+WIStudyDat$county <- ""
+WIStudyDat$result <- ""
+WIStudyDat$n <- 0
+
+
+```
+
+```{r make dataframe to explore sampling}
+
+WIDatClean <- WIDatClean %>% group_by(CWD.Year, County, uid, Test.Result) %>% summarise(n=n(), .groups='drop')
+WIDatClean <- WIDatClean[-c(which(WIDatClean$CWD.Year=="1999-2001")),] # remove 1999-2001
+# to delete later
+# remove 2002-2006
+WIDatClean <- WIDatClean[-c(which(WIDatClean$CWD.Year %in% c("2002", "2003", "2004", "2005", "2006"))),]
+
+wiDatSample <- WIDatClean %>% group_by(CWD.Year) %>% summarise(numSamp=n(), .groups="drop")
+```
+```{r display annual variation in sampling effort}
+WIDatAnnualVar <- WIDat %>% filter(!(CWD.Year %in% nonSampYear))
+# plot bar graph
+ggplot(WIDatAnnualVar, aes(x=CWD.Year)) +
+  geom_bar(show.legend = FALSE) +
+  ylab("Log(Rate Positive/10000 images)") +
+  xlab("site ID") +
+  ggtitle("Encounter Rate per 10,000 images")
+
+
+```
+
+```{r examine spatial differences in sampling effort}
+WIDatSampleSpatial <- WIDatClean %>% group_by(uid) %>% summarise(numSamp=n())
+
+wiTwnshpShpStudySpatialSample <- wiTwnshpStudy
+wiTwnshpShpStudySpatialSample$numSamp <- 0
+for(i in 1:nrow(wiTwnshpShpStudySpatialSample)){
+  for(j in 1:nrow(WIDatSampleSpatial)){
+    if(wiTwnshpShpStudySpatialSample[i,]$uid == WIDatSampleSpatial[j,]$uid){
+      wiTwnshpShpStudySpatialSample[i,]$numSamp <- WIDatSampleSpatial[j,]$numSamp
+    }
+  }
+}
+
+wiTwnshpShpStudySpatialSample$numSamp <- log(wiTwnshpShpStudySpatialSample$numSamp + 1)
+plot(wiTwnshpShpStudySpatialSample[,6], main="Log Normalized Number of Samples (2007-2022)") 
+```
+
+```{r}
+wiDatKillMethod <- WIDatClean %>% group_by(Hunter.Type) %>% summarise(num=n())
+wiDatKillMethod
+wiDatSex <- WIDatClean %>% group_by(Sex)%>% summarise(num=n())
+wiDatSex
+wiDatSexPositivity <- WIDatClean %>% group_by(Sex, Test.Result) %>% filter(Sex=='M' || Sex=='F') %>% summarise(num=n(), .groups="keep")
+# check positivity rate
+wiDatSexPositivityWide<-melt(wiDatSexPositivity, idvar="Sex", measure.vars = "Test.Result")
+
+wiDatSex <- data.frame(sex=c("M","F"), rate=0)
+
+for(i in 1:nrow(wiDatSexPositivity)){
+  for(j in 1:nrow(wiDatSex)){
+    if(wiDatSex[j,]$sex==wiDatSexPositivity[i,]$Sex){
+      wiDatSex[j,]$rate = wiDatSexPositivity[i,]$num + wiDatSex[j,]$rate
+    }
+  }
+}
+wiDatSex[which(wiDatSex$sex=='M'),]$rate = wiDatSexPositivity[which(wiDatSexPositivity$Sex=='M' & wiDatSexPositivity$Test.Result=='Positive'),]$num/wiDatSex[which(wiDatSex$sex=='M'),]$rate
+wiDatSex[which(wiDatSex$sex=='F'),]$rate = wiDatSexPositivity[which(wiDatSexPositivity$Sex=='F' & wiDatSexPositivity$Test.Result=='Positive'),]$num/wiDatSex[which(wiDatSex$sex=='F'),]$rate
+wiDatSex
+```
+
+
+```{r}
+
+
+wiTwnshpStudy <- wiCountyTwnshps %>% select(OBJECTID, uid, SHAPE_Leng, SHAPE_Area)
+
+studyYears <- c(2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022)
+
+
+
+
+
+for(i in 1:nrow(wiTwnshpStudy)){
+  for(j in 1:nrow(wiDatSample)){
+    if(wiTwnshpStudy[i,]$uid == wiDatSample[j,]$uid){
+      wiTwnshpStudy[i,get("wiDatSample")[j,"CWD.Year"][[1]]] <- wiDatSample[j,]$numSamp
+      break
+      }
+  }
+}
+```
+
+```{r, calculate WSI matrix, echo=FALSE}
+months <- c(11, 12, 1, 2, 3, 4)
+# constants for calculating WSI
+tminThrshld <- -17.7 # number used by MNDNR
+tmaxThrshld <- 0
+pptThrshld <- 38 # 38 cm cited
+# can set our month condition here for different measures of WSI
+minDay <- '12-01' # December 1
+maxDay <- '04-30' # April 30
+# need some spring date threshold
+# these are for the WSI index; for year n-1
+# NOTE start testing at 2017
+# years<-c(seq(2001,2022,1))
+years<-c(seq(2001, 2002, 1))
+# DON'T DELETE; only for getting 
+pdStackRaw<-pd_stack(prism_archive_subset("ppt",
+                                          "monthly",
+                                          years=2001))
+# now we need to reproject these into the same CRS
+
+# looking at only at Iowa County
+#wiCountyShp<-subset(wiCountyShp,wiCountyShp$COUNTY_NAM == "Iowa")
+wiShp.e<-projectExtent(wiCountyShp, pdStackRaw)
+# great now we have pdStackWI
+# now we can crop the pdStack data into our study extent
+pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
+# first let's get these into the same CRS
+wiTwnshpSpat<-project(as(wiTwnshpShp, "SpatVector"), crs(wiCountyShp))
+# get the spat data into the same CRS
+wiTwnshpSpat<-as(wiTwnshpShp, "Spatial")
+cumPPT <- 0
+wsi.mat <- matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years))
+k<-1
+for(i in 1:(length(years)-1)){
+  minDate <- paste0(years[i], "-", minDay)
+  maxDate <- paste0(years[i] + 1, "-", maxDay)
+  #if(exists)
+  
+  # note can use prism_archive_verify
+  # or prism_archive_clean
+  # maybe need to change this to iterate over each day
+  pptRaw<-pd_stack(prism_archive_subset("ppt",
+                                        "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tminRaw<-pd_stack(prism_archive_subset("tmin",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  pptWI <- terra::crop(pptRaw, wiShp.e)
+  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
+  tminWI <- terra::crop(tminRaw, wiShp.e)
+  ppt_by_twnshp <- terra::extract(pptWI,
+                                wiTwnshpSpat,
+                                method="bilinear")
+  tmax_by_twnshp <- terra::extract(tmaxWI,
+                                wiTwnshpSpat,
+                                method="bilinear")
+  tmin_by_twnshp <- terra::extract(tminWI,
+                                wiTwnshpSpat,
+                                method="bilinear")
+    # index for the current day
+    k <- 1
+    for(j in 1:length(ppt_by_twnshp)){
+      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
+        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
+        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
+        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
+        # check if any of the values are NA
+        # maybe don't remove them
+        if(!(any(is.na(pptVals), is.na(tminVals), is.na(tmaxVals)) ||
+             any(is.null(pptVals), is.null(tminVals), is.null(tmaxVals)))){
+          # note that PRISM data is reported in MM; 
+          # average ppt for a given township for day k
+          avgPPT <- mean(pptVals) / 10 # need CM divide by 10
+          # average min. temp for a given township for day k 
+          avgTMin <- mean(tminVals) 
+          avgTMax <- mean(tmaxVals)
+          avgTmp <- mean(c(tminVals, tmaxVals))
+      if(avgPPT > 0 & avgTmp <= 0){
+        cumPPT = cumPPT + avgPPT
+      }
+      # snow on the ground but above freezing
+        
+      # TODO: this is where factors such as latitude can be taken into account
+      # could also take into account landscape factors here as well
+      # note that the measurements are in mm for precip and C for temp
+      # https://prism.oregonstate.edu/FAQ/#:~:text=What%20units%20are%20the%20data,want%20maps%20in%20those%20units
+      # if(cumPPT > 0 & avgTmp > 0){
+      #   # from Dawe and Boutin 2012 Journal of Wildlife Research
+      #   meltFactor <- (1.88 + 0.007 * avgPPT) * (1.8 * avgTmp) + 1.27
+      #   cumPPT = cumPPT - meltFactor # some melt factor update later with lit found
+      # }
+      if((cumPPT >= pptThrshld & avgTMin >= tminThrshld) || 
+         (cumPPT <= pptThrshld & avgTMin <= tminThrshld)){
+            wsi.mat[j,i] <- wsi.mat[j,i] + 1
+        }
+      if(cumPPT > pptThrshld & avgTMin < tminThrshld){
+            wsi.mat[j,i] <- wsi.mat[j,i] + 2
+      }
+      # in this case all  of the days in 
+      # a particular township have been processed
+          }
+      }
+      cumPPT <- 0
+      }
+ }
+# save the WSI mat
+# transform back to sf
+wiTwnshpShp<-st_transform(wiTwnshpShp, st_crs(wiCountyStudy))
+# create new variable
+indx.i<-st_within(wiTwnshpShp, wiCountyStudy, sparse=FALSE)
+indx<-which(indx.i, indx.i==FALSE)
+wiTwnShpShpStudy<-wiTwnshpShp[- indx,]
+wiTwnshpShp <- cbind(wiTwnshpShp, wsi.r)
+# get rid of wistudyShp
+plot(wiTwnshpShp[which(wiTwnshpShp$FID %in% wiTwnShpStudy$FID),], max.plot=20)
+```
+```{r create late-season WSI mat}
+# TODO figure out how to save subsetted files
+
+# norton et. al 2021 November, December, January
+# norton et. al 2021 February, March
+# constants for calculating WSI
+tminThrshld <- -17.7 # number used by MNDNR
+tmaxThrshld <- 0
+pptThrshld <- 38 # 38 cm cited
+# can set our month condition here for different measures of WSI
+earlySeasonStartDay<- '12-01' # november 1
+earlySeasonEndDay <- '1-31' # may 10
+minDay <- '12-01' # December 1
+maxDay <- '04-30' # April 30
+# these are for the WSI index; for year n-1
+# NOTE start testing at 2017
+years<-c(seq(2001,2021,1))
+# years.s<-c(seq(2001, 2002, 1))
+# DON'T DELETE; only for getting 
+pdStackRaw<-pd_stack(prism_archive_subset("ppt",
+                                          "monthly",
+                                          years=years))
+# now we need to reproject these into the same CRS
+wiShp.e<-projectExtent(wiTwnshpShp, pdStackRaw)
+# great now we have pdStackWI
+# now we can crop the pdStack data into our study extent
+pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
+# first let's get these into the same CRS
+wiTwnShpSpat<-as(wiTwnshpShp, "Spatial")
+
+# get the spat data into the same CRS
+wiTwnShpSpat<-spTransform(wiTwnShpSpat, crs(wiCountyShp))
+cumPPT <- 0
+wsi.mat.late <- matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years))
+k<-1
+for(i in 1:(length(years)-1)){
+  
+  minDate <- paste0(years[i], "-", minDay)
+  maxDate <- paste0(years[i] + 1, "-", maxDay)
+  earlySeasonStartDate <- paste0(years[i], "-", earlySeasonStartDay)
+  earlySeasonEndDate <- paste0(years[i] + 1, "-", earlySeasonEndDay)
+  earlySeasonInterval<- abs(as.double(as.Date(as.character(earlySeasonStartDate), format="%Y-%m-%d")-
+          as.Date(as.character(earlySeasonEndDate), format="%Y-%m-%d")))
+ 
+  #if(exists)
+  
+  # note can use prism_archive_verify
+  # or prism_archive_clean
+  # maybe need to change this to iterate over each day
+  pptRaw<-pd_stack(prism_archive_subset("ppt",
+                                        "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tminRaw<-pd_stack(prism_archive_subset("tmin",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  pptWI <- terra::crop(pptRaw, wiShp.e)
+  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
+  tminWI <- terra::crop(tminRaw, wiShp.e)
+  ppt_by_twnshp <- terra::extract(pptWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmax_by_twnshp <- terra::extract(tmaxWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmin_by_twnshp <- terra::extract(tminWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+    # index for the current day
+    k <- 1
+    for(j in 1:length(ppt_by_twnshp)){
+      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
+        # need to check if any of the values are NA
+        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
+        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
+        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
+        if(!(any(is.na(pptVals), is.na(tminVals), is.na(tmaxVals)))){
+          # note that PRISM data is reported in MM; need CM divide by 10
+          avgPPT <- mean(pptVals) / 10 # average ppt for a given township for day k
+          avgTMin <- mean(tminVals) # average min. temp for a given township for day k 
+          avgTMax <- mean(tmaxVals)
+          avgTmp <- mean(c(tminVals, tmaxVals))
+      if(avgPPT > 0 & avgTmp <= 0){
+        cumPPT = cumPPT + avgPPT
+      }
+      # snow on the ground but above freezing
+        
+      # TODO: this is where factors such as latitude can be taken into account
+      # could also take into account landscape factors here as well
+      # note that the measurements are in mm for precip and C for temp
+      # https://prism.oregonstate.edu/FAQ/#:~:text=What%20units%20are%20the%20data,want%20maps%20in%20those%20units
+      
+      if(cumPPT > 0 & avgTmp > 0){
+        # from Dawe and Boutin 2012 Journal of Wildlife Research
+        # meltFactor <- (1.88 + 0.007 * avgPPT) * (1.8 * avgTmp) + 1.27
+        cumPPT = cumPPT  # some melt factor update later with lit found
+      }
+      if(k >  earlySeasonInterval){
+      if((cumPPT > pptThrshld) & avgPPT > pptThrshld){
+            wsi.mat.late[j,i] <- wsi.mat.late[j,i] + 1
+        }
+      if(cumPPT > pptThrshld & avgTMin < tminThrshld){
+            wsi.mat.late[j,i] <- wsi.mat.late[j,i] + 2
+      }
+      if(cumPPT < pptThrshld & avgTMin < tminThrshld){
+        wsi.mat.late[j,i] <- wsi.mat.late[j,i] + 1
+      }
+      # in this case all  of the days in 
+      # a particular township have been processed
+          }
+      }
+      cumPPT <- 0
+      }
+    }
+}
+write.table(wsi.mat.late, "./wsiMatLate")
+```
+
+```{r, calculate WSI matrix--snow pack only, echo=FALSE}
+tminThrshld <- -17.7 # number used by MNDNR
+tmaxThrshld <- 0
+pptThrshld <- 38 # 38 cm cited
+# can set our month condition here for different measures of WSI
+minDay <- '12-01' # December 1
+maxDay <- '04-30' # April 30
+years<-c(seq(2001,2021,1))
+# years.s<-c(seq(2001, 2002, 1))
+# DON'T DELETE; only for getting 
+pdStackRaw<-pd_stack(prism_archive_subset("ppt",
+                                          "monthly",
+                                          years=2001))
+# now we need to reproject these into the same CRS
+wiShp.e<-projectExtent(wiTwnshpShp, pdStackRaw)
+# great now we have pdStackWI
+# now we can crop the pdStack data into our study extent
+pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
+# first let's get these into the same CRS
+wiTwnShpSpat<-as(wiTwnshpShp, "Spatial")
+
+# get the spat data into the same CRS
+wiTwnShpSpat<-spTransform(wiTwnShpSpat, crs(wiShp))
+cumPPT <- 0
+wsi.mat.ppt <- matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years))
+k<-1
+for(i in 1:(length(years)-1)){
+  
+  minDate <- paste0(years[i], "-", minDay)
+  maxDate <- paste0(years[i] + 1, "-", maxDay)
+  pptRaw<-pd_stack(prism_archive_subset("ppt",
+                                        "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tminRaw<-pd_stack(prism_archive_subset("tmin",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  pptWI <- terra::crop(pptRaw, wiShp.e)
+  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
+  tminWI <- terra::crop(tminRaw, wiShp.e)
+  ppt_by_twnshp <- terra::extract(pptWI,pl
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmax_by_twnshp <- terra::extract(tmaxWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmin_by_twnshp <- terra::extract(tminWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+    # index for the current day
+    k <- 1
+    for(j in 1:length(ppt_by_twnshp)){
+      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
+        # need to check if any of the values are NA
+        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
+        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
+        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
+        if(!(any(is.na(pptVals), is.na(tminVals), is.na(tmaxVals)))){
+          # note that PRISM data is reported in MM; need CM divide by 10
+          avgPPT <- mean(pptVals) / 10 # average ppt for a given township for day k
+          avgTmp <- mean(c(tminVals, tmaxVals))
+          if(avgPPT > 0 & avgTmp <= 0){
+            cumPPT = cumPPT + avgPPT
+          }
+          # snow on the ground but above freezing
+          # could also take into account landscape factors here as well
+          # note that the measurements are in mm for precip and C for temp
+          # https://prism.oregonstate.edu/FAQ/#:~:text=What%20units%20are%20the%20data,want%20maps%20in%20those%20units
+        if(cumPPT > 0 & avgTmp > 0){
+          # from Dawe and Boutin 2012 Journal of Wildlife Research
+          meltFactor <- (1.88 + 0.007 * avgPPT) * (1.8 * avgTmp) + 1.27
+          cumPPT = cumPPT - meltFactor# some melt factor update later with lit found
+        }
+        if(cumPPT > pptThrshld){
+          wsi.mat.ppt[j,i] <- wsi.mat.ppt[j,i] + 1
+        }
+      }
+    }
+    cumPPT <- 0
+  }
+}
+write.table(wsi.mat.ppt, "./wsiMatPPT")
+```
+```{r,}
+cwd.dat.pos$uuid <- 0
+for(i in 1:nrow(cwd.dat.pos)){
+str<-strsplit(cwd.dat.pos[i,]$uid,"-")
+cwd.dat.pos[i,]$uuid <- paste0(str[[1]][2],"-",str[[1]][3],"-",str[[1]][4])
+}
+cwd.dat.analyzed$uuid <- 0
+for(i in 1:nrow(cwd.dat.analyzed)){
+str<-strsplit(cwd.dat.analyzed[i,]$uid,"-")
+cwd.dat.analyzed[i,]$uuid <- paste0(str[[1]][2],"-",str[[1]][3],"-",str[[1]][4])
+}
+for(i in 1:nrow(cwd.dat.analyzed)){
+  for(j in 1:ncol(cwd.dat.analyzed)){
+    if(is.na(cwd.dat.analyzed[i,j])){
+      cwd.dat.analyzed[i,j]<-0
+    }
+  }
+}
+for(i in 1:nrow(cwd.dat.pos)){
+  for(j in 1:ncol(cwd.dat.pos)){
+    if(is.na(cwd.dat.pos[i,j])){
+      cwd.dat.pos[i,j]<-0
+    }
+  }
+}
+
+# replace the repeated rows in analyzed data
+
+cwd.dat.analyzed <- cwd.dat.analyzed[,-1]
+cwd.dat.pos <- cwd.dat.pos[,-1]
+cwd.dat.analyzed<-cwd.dat.analyzed %>% group_by(uuid) %>% summarise_all(funs(sum)) # sum them
+cwd.dat.pos<-cwd.dat.pos %>% group_by(uuid) %>% summarise_all(funs(sum))
+wiTwnshpShp$uid <- paste0(wiTwnshpShp$TWP, "-", wiTwnshpShp$RNG, "-", wiTwnshpShp$DIR_ALPHA)
+# subtract the ones that aren't in wiTwnshpShp
+cwd.dat.pos <- cwd.dat.pos[-c(which(!c(cwd.dat.pos$uuid) %in% c(wiTwnshpShp$uid))),]
+cwd.dat.analyzed <- cwd.dat.analyzed[-c(which(!c(cwd.dat.analyzed$uuid) %in% c(wiTwnshpShp$uid))),]
+
+wiTwnshpShpWSI <- cbind(wiTwnshpShp, wsi.mat.late)
+
+wiStudyShp <-wiTwnshpShpWSI[-c(which(!c(wiTwnshpShpWSI$uid) %in% c(cwd.dat.pos$uuid))),]
+wiStudyShp<-wiStudyShp %>% arrange(uid)
+cwd.dat.pos <- cwd.dat.pos %>% arrange(uuid)
+cwd.dat.analyzed <- cwd.dat.analyzed %>% arrange(uuid)
+
+wsi.mat <- cbind(
+  wiStudyShp$V1,
+  wiStudyShp$V2,
+  wiStudyShp$V3,
+  wiStudyShp$V4,
+  wiStudyShp$V5,
+  wiStudyShp$V6,
+  wiStudyShp$V7,
+  wiStudyShp$V8,
+  wiStudyShp$V9,
+  wiStudyShp$V10,
+  wiStudyShp$V11,
+  wiStudyShp$V12,
+  wiStudyShp$V13,
+  wiStudyShp$V14,
+  wiStudyShp$V15,
+  wiStudyShp$V16,
+  wiStudyShp$V17,
+  wiStudyShp$V18,
+  wiStudyShp$V19,
+  wiStudyShp$V20
+)
+cwd.dat.analyzed <- cwd.dat.analyzed[,-which(colnames(cwd.dat.analyzed) == "uuid")]
+cwd.dat.pos <- cwd.dat.pos[,-which(colnames(cwd.dat.pos) == "uuid")]
+cwd.dat.pos <- cwd.dat.pos[,-1]
+cwd.dat.analyzed <- cwd.dat.analyzed[,-1]
+cwd.mat.pos <- matrix(0, nrow=nrow(cwd.dat.pos), ncol=ncol(cwd.dat.pos))
+cwd.mat.analyzed <- matrix(0, nrow=nrow(cwd.dat.analyzed), ncol=ncol(cwd.dat.analyzed))
+for(i in 1:nrow(cwd.mat.pos)){
+  for(j in 1:ncol(cwd.mat.pos)){
+    cwd.mat.analyzed[i,j] <- as.numeric(cwd.dat.analyzed[i,j])
+    cwd.mat.pos[i,j] <- as.numeric(cwd.dat.pos[i,j])
+    }
+}
+
+
+```
+```{r, get late season WSI mat for study area}
+wiTwnshpShpWSILate<-cbind(wiTwnshpShp, wsi.mat.late)
+wiStudyShpLate <-wiTwnshpShpWSILate[-c(which(!c(wiTwnshpShpWSILate$uid) %in% c(cwd.dat.pos$uuid))),]
+wiStudyShpLate <- arrange(wiStudyShpLate, uid)
+wsi.mat.late <- cbind(
+  wiStudyShpLate$V1,
+  wiStudyShpLate$V2,
+  wiStudyShpLate$V3,
+  wiStudyShpLate$V4,
+  wiStudyShpLate$V5,
+  wiStudyShpLate$V6,
+  wiStudyShpLate$V7,
+  wiStudyShpLate$V8,
+  wiStudyShpLate$V9,
+  wiStudyShpLate$V10,
+  wiStudyShpLate$V11,
+  wiStudyShpLate$V12,
+  wiStudyShpLate$V13,
+  wiStudyShpLate$V14,
+  wiStudyShpLate$V15,
+  wiStudyShpLate$V16,
+  wiStudyShpLate$V17,
+  wiStudyShpLate$V18,
+  wiStudyShpLate$V19,
+  wiStudyShpLate$V20
+  )
+
+# cwd.dat.pos <- cwd.dat.pos[,-which(colnames(cwd.dat.pos) == "uuid")]
+cwd.dat.pos<-cwd.dat.pos[,-1]
+cwd.dat.analyzed <- cwd.dat.analyzed[,-1]
+cwd.mat.pos <- matrix(0, nrow=nrow(cwd.dat.pos), ncol=ncol(cwd.dat.pos))
+cwd.mat.analyzed <- matrix(0, nrow=nrow(cwd.dat.analyzed), ncol=ncol(cwd.dat.analyzed))
+wsi.mat.ll <- matrix(0, nrow=nrow(wsi.mat.late), ncol=ncol(wsi.mat.late))
+for(i in 1:nrow(cwd.mat.pos)){
+  for(j in 1:ncol(cwd.mat.pos)){
+    cwd.mat.analyzed[i,j] <- as.numeric(cwd.dat.analyzed[i,j])
+    cwd.mat.pos[i,j] <- as.numeric(cwd.dat.pos[i,j])
+    wsi.mat.ll[i,j] <- as.numeric(wsi.mat.late[i,j])
+    }
+}
+
+```
+
+```{r clean data, remove islands}
+ 
+# create neighborhood matrix
+wiStudyShpPoly <- as(wiStudyShp, "Spatial")
+W.nb <- poly2nb(wiStudyShpPoly)
+W <- nb2WB(W.nb)
+bad.indx<-which(W$num== 0)
+
+# remove islands
+cwd.mat.pos <- cwd.mat.pos[-c(bad.indx),]
+cwd.mat.analyzed <- cwd.mat.analyzed[-c(bad.indx),]
+wsi.mat <- wsi.mat[-c(bad.indx),]
+wiStudyShp <- wiStudyShp[-c(bad.indx),]
+wiStudyShpPoly <- as(wiStudyShp, "Spatial")
+W.nb <- poly2nb(wiStudyShpPoly)
+W <- nb2WB(W.nb)
+wCarCM<-as.carCM(W$adj, W$weights, W$num)
+cwd.r<-sum(cwd.mat.pos)/sum(cwd.mat.analyzed)
+# get all of the row numbers where nothing has been analyzed for the entire period
+zeros <- c()
+k <- 1
+for(i in 1:nrow(cwd.mat.analyzed)){
+ if(sum(cwd.mat.analyzed[i,]) == 0){
+  zeros[k] <- i
+  k = k + 1}}
+
+cwd.mat.pos <- cwd.mat.pos[-c(zeros),]
+cwd.mat.analyzed <- cwd.mat.analyzed[-c(zeros),]
+wiStudyShp <- wiStudyShp[-c(zeros),]
+
+cwd.mat.pos <- cwd.mat.pos[-c(456),]
+cwd.mat.analyzed <- cwd.mat.analyzed[-c(456),]
+wiStudyShp <- wiStudyShp[-c(456),]
+wiStudyShpPoly <- as(wiStudyShp, "Spatial")
+W.nb <- poly2nb(wiStudyShpPoly)
+W <- nb2WB(W.nb)
+wCarCM<-as.carCM(W$adj, W$weights, W$num)
+cwd.r<-sum(cwd.mat.pos)/sum(cwd.mat.analyzed)
+bad.indx<-which(W$num== 0)
+
+cwd.mat.pos <- cwd.mat.pos[-c(bad.indx),]
+cwd.mat.analyzed <- cwd.mat.analyzed[-c(bad.indx),]
+wiStudyShp <- wiStudyShp[-c(bad.indx),]
+W.nb <- poly2nb(wiStudyShp)
+W <- nb2WB(W.nb)
+wCarCM<-as.carCM(W$adj, W$weights, W$num)
+cwd.r<-sum(cwd.mat.pos)/sum(cwd.mat.analyzed)
+```
+
+```{r, rnoaa}
+wsMatMean <- matrix(0, nrow=nrow(wiStudyShp), ncol=length(seq(year_min, year_max, 1)))
+wsMatMax <- matrix(0, nrow=nrow(wiStudyShp), ncol=length(seq(year_min, year_max, 1)))
+# iterate thru the study sf object of twnshps in study area
+for(i in 1:nrow(wiStudyShp)){
+  geo<-wiStudyShp[i,]$geometry
+  uid<-wiStudyShp[i,]$uid
+  # SNWD is the element for snowdepth
+  # SNWD is reported in mm
+  # VALUE1 is the value on the first day of the month (missing = -9999)
+  centroid<-st_transform(st_centroid(geo, resolution="20m"), '+proj=longlat +nodefs')
+  # create centroid object id, lat ,lon
+  cent <- data.frame(id=wiStudyShp[i,]$uid,latitude=unlist(centroid,1)[2], longitude=unlist(centroid,2)[1])
+  nearStations<-meteo_nearby_stations(cent,var="snwd", station_data=station_data,radius=station_radius, year_min=2001, year_max=2022)
+  # creates character vector of nearby station ids
+  nearStationIDs <- c(get(uid,nearStations)[,1]) 
+  monitors <- meteo_pull_monitors(nearStationIDs, date_min="2001-12-01", date_max="2022-04-30")
+  monitors<-monitors %>% select(date,snwd) %>% na.omit() %>% group_by(date) %>% mutate(sumsnwd = sum(snwd)) %>% mutate(numsnwd = n()) %>%
+  mutate(year=as.numeric(strsplit(as.character(date), "-")[[1]][1])) %>% mutate(month=as.numeric(strsplit(as.character(date), "-")[[1]][2])) %>% mutate(day=as.numeric(strsplit(as.character(date), "-")[[1]][3]))
+  # generate average snow depth
+  # divide by 10 to convert to CM 
+   monitors<-monitors %>% select(date,year,month,day,sumsnwd,numsnwd) %>%
+    mutate(avgsnwd=(sumsnwd/numsnwd)/10)
+  # get average daily SNWD
+   # filter by months
+   monitors <- monitors %>% filter(month %in% c(1,2,3,4,5,12))
+  # get a list of objects to remove
+  # create an object for each near station
+   for(j in 2:length(wsi.years)){
+      monitorsYearPrior<-monitors %>% filter(month %in% c(12) & year==wsi.years[j-1])
+      monitorsCurrentYear<-monitors %>% filter(month %in% c(1,2,3,4,5) & year==wsi.years[j])
+      wsMatMean[i,j] <- mean(c(monitorsYearPrior$avgsnwd, monitorsCurrentYear$avgsnwd))
+      wsMatMax[i,j] <- max(c(monitorsYearPrior$avgsnwd, monitorsCurrentYear$avgsnwd))
+  }
+}
+```
+
+```{r}
+# intersect the dmu shp and the wiStudyShp
+wiStudyShp$dmu <- ""
+dmu<-st_transform(dmu, crs(wiStudyShp))
+for(i in 1:nrow(wiStudyShp)){
+  for(j in 1:nrow(dmu)){
+    if(st_within(wiStudyShp[i,], dmu[j,], sparse=FALSE)){
+      wiStudyShp[i,]$dmu <- dmu[j,]$DEER_MANAG
+    }
+  }  
+}
+```
+
+```{r calculate HSI}
+
+```

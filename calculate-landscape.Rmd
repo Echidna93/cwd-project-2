@@ -1,0 +1,277 @@
+---
+title: "calculate-landscape"
+output: html_document
+date: "2023-12-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r, echo=FALSE}
+library("rgdal")
+library("raster")
+library("sf")
+library("leafsync")
+library("dplyr")
+library("ggplot2")
+library("stars")
+library(spatialEco)
+library(spatstat.random)
+library(data.table)
+library(geoR)
+library(RColorBrewer)
+library(spdep)
+library(spatialreg)
+library(classInt)
+library(rgeos)
+library(landscapemetrics)
+library(nimble)
+library(coda)
+library(prism)
+library(terra)
+library(maps)
+library(raster)
+library(rnoaa)
+library(stringr)
+```
+
+```{r import files}
+wiTwnshpShp <- st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+wiLC<-raster("./data/raster/wiscland2/wiscland2_dataset/level4/wiscland2_level4.tif")
+wiCountyShp <- st_read("./data/shapefiles/County_Boundaries_24K/County_Boundaries_24K.shp")
+ WIDat<-read.table(
+  "./data/WIData.csv",
+  sep=",", header=TRUE)
+```
+
+```{r}
+wiCountyShp <- wiCountyShp %>% filter(COUNTY_NAM %in% unique(WIDat$County))
+```
+
+```{r transform shps}
+wiCountyShp<-st_transform(wiCountyShp, crs(wiTwnshpShp))
+wiCountyTwnshps <- st_intersection(wiCountyShp, wiTwnshpShp)
+wiTwnshpShp<-st_transform(wiTwnshpShp, crs(wiLC))
+wiCountyTwnshps <- st_transform(wiCountyTwnshps, crs(wiLC))
+study.ext<-extent(wiCountyTwnshps)
+lc.cropped<-crop(wiLC, study.ext)
+wiTwnshpShp<-st_crop(wiTwnshpShp, study.ext)
+wiTwnshpShp <- wiTwnshpShp %>% mutate(uid = paste0(TWP,"-",RNG,"-", DIR_ALPHA))
+wiTwnshpShpSpat <- as(wiTwnshpShp, "Spatial")
+lcTypes<-unique(lc.cropped$cls_desc_1)
+lcTypes <- c(c("uid","nCells"),lcTypes)
+lcDat = data.frame(matrix(0,nrow = nrow(wiTwnshpShp), ncol = (length(lcTypes)))) 
+names(lcDat) <- lcTypes
+lcDat['uid'] <- unique(wiTwnshpShp$uid)
+for(i in 1:nrow(wiTwnshpShpSpat)){
+  lcDat[i,'nCells']<-ncell(crop(lc.cropped, extent(bbox(wiTwnshpShpSpat[i,])))) # denominator
+  lcTwnshp <- extract(lc.cropped, extent(bbox(wiTwnshpShpSpat[i,])))
+  for(j in 1:length(lcTwnshp)){
+      lcDat[i,as.character(lcTwnshp[j])] = lcDat[i,as.character(lcTwnshp[j])] + 1
+    }
+}
+
+write.table(lcDat, "./data/lcDat")
+lcDat2 <- read.table("./data/lcDat")
+#   farm<-st_transform(get(farms[j]), crs(landcover))
+#   farm.extent<-extent(farm)
+#   farm.extent<-extend(farm.extent, buffDistLrg*2)
+#   #landcoverMNWI<-projectExtent(landcoverMNWI, crs(s01))
+#   # crop our lc dataset to the buffered extent
+#   lc.cropped<-crop(landcover, farm.extent) %>% 
+#   st_as_stars() %>%
+#   st_as_sf()
+# farmBuffSml<-farm %>%
+#   st_buffer(buffDistSml) # buffer by 30m
+# 
+# farmBuffMed<-farm %>%
+#   st_buffer(buffDistMed) # buffer by 30m
+# 
+# farmBuffLrg<-farm %>%
+#   st_buffer(buffDistLrg) # buffer by 30m
+# 
+# # subtract the buffered farm from the original shp
+# # farm.fenceline.buff<-st_difference(farmBuffSml, farm.full)
+# 
+# # intersect our fencline and our cropped landcover tif
+# lcFullSml<-st_intersection(lc.cropped, farmBuffSml)
+# lcFullMed<-st_intersection(lc.cropped, farmBuffMed)
+# lcFullLrg<-st_intersection(lc.cropped, farmBuffLrg)
+# # lcFullSml <- st_intersection(lc.cropped, lcFenclineSml)
+# # lcFullMed <- st_intersection(lc.cropped, lcFenclineMed)
+# # lcFullLrg <- st_intersection(lc.cropped, lcFenclineLrg)
+# # convert back to raster so we can use sampleStratified
+# lcFullSmlRast<-st_rasterize(lcFullSml)
+# lcFullMedRast<-st_rasterize(lcFullMed)
+# lcFullLrgRast<-st_rasterize(lcFullLrg)
+# 
+# propForestSml <- 0
+# propForestMed <- 0
+# propForestLrg <- 0
+# 
+# wiTwnshpShp
+# 
+# 
+# 
+# lc.evrgrn <- lc == 42
+# wiCountyTwnshpsSpat<-as(wiCountyTwnshps, "Spatial")
+# twnshp<-intersect(wiCountyTwnshpsSpat$, lc.cropped)
+# # studyarea<-as(studyarea, "Spatial")
+# for(i in 1:nrow(wiCountyShp)){
+#   twnshp <-crop(lc.evrgrn,extent(bbox(studyarea.spat[i,])))
+#   prop.evrgrn[i] <- cellStats(twnshp, "sum") / ncell(evrgrn)
+# }
+# for(i in 1:nrow(wiCountyTwnshps)){
+#   if(farms[j] == "S07" || farms[j] == "S10"){
+#     if(lcFullSml[i,]$nlcd.landcover.PA %in% seq(41,43,1)){
+#       propForestSml <- propForestSml + 1
+#     } 
+#   }else{
+#     if(lcFullSml[i,]$clipped.area %in% seq(41,43,1)){
+#     propForestSml <- propForestSml + 1
+#   }   
+#     }
+#      
+# }
+# propForestSml <- propForestSml/nrow(lcFullSml)
+# 
+# for(i in 1:nrow(lcFullMed)){
+#   if(farms[j] == "S07" || farms[j] == "S10"){
+#     if(lcFullMed[i,]$nlcd.landcover.PA %in% seq(41,43,1)){
+#       propForestMed <- propForestMed + 1
+#     } 
+#   }else{
+#     if(lcFullMed[i,]$clipped.area %in% seq(41,43,1)){
+#     propForestMed <- propForestMed + 1
+#   }   
+#     }
+#    
+# }
+# propForestMed <- propForestMed/nrow(lcFullMed)
+# 
+# for(i in 1:nrow(lcFullLrg)){
+#   if(farms[j] == "S07" || farms[j] == "S10"){
+#     if(lcFullLrg[i,]$nlcd.landcover.PA %in% seq(41,43,1)){
+#       propForestLrg <- propForestLrg + 1
+#     } 
+#   }else{
+#     if(lcFullLrg[i,]$clipped.area %in% seq(41,43,1)){
+#     propForestLrg <- propForestLrg + 1
+#   }   
+#     }
+#     
+# }
+# propForestLrg <- propForestLrg/nrow(lcFullLrg)
+# 
+# camDatSummary[which(camDatSummary$sid == farms[j]),]$propForest1k <- propForestSml
+# camDatSummary[which(camDatSummary$sid == farms[j]),]$propForest3k <- propForestMed
+# camDatSummary[which(camDatSummary$sid == farms[j]),]$propForest5k <- propForestLrg
+# }
+# 
+# 
+
+```
+```{r calculate}
+
+
+camDatSummary$propForest1k <- 0
+camDatSummary$propForest3k <- 0
+camDatSummary$propForest5k <- 0
+# grab the extent of our farm
+farms <- c("S01","S02", "S03", "S04", "S05a", "S05b", "S05c", "S05d", "S06", "S07", "S09", "S10", "S11", "S12")
+for(j in 1:length(farms)){
+  if(farms[j] == "S07" || farms[j] == "S10"){
+    landcover <- landcover_PA
+  }
+  else{
+    landcover <- landcover_MNWI
+  }
+  
+  farm<-st_transform(get(farms[j]), crs(landcover))
+  farm.extent<-extent(farm)
+  farm.extent<-extend(farm.extent, buffDistLrg*2)
+  #landcoverMNWI<-projectExtent(landcoverMNWI, crs(s01))
+  # crop our lc dataset to the buffered extent
+  lc.cropped<-crop(landcover, farm.extent) %>% 
+  st_as_stars() %>%
+  st_as_sf()
+farmBuffSml<-farm %>%
+  st_buffer(buffDistSml) # buffer by 30m
+
+farmBuffMed<-farm %>%
+  st_buffer(buffDistMed) # buffer by 30m
+
+farmBuffLrg<-farm %>%
+  st_buffer(buffDistLrg) # buffer by 30m
+
+# subtract the buffered farm from the original shp
+# farm.fenceline.buff<-st_difference(farmBuffSml, farm.full)
+
+# intersect our fencline and our cropped landcover tif
+lcFullSml<-st_intersection(lc.cropped, farmBuffSml)
+lcFullMed<-st_intersection(lc.cropped, farmBuffMed)
+lcFullLrg<-st_intersection(lc.cropped, farmBuffLrg)
+# lcFullSml <- st_intersection(lc.cropped, lcFenclineSml)
+# lcFullMed <- st_intersection(lc.cropped, lcFenclineMed)
+# lcFullLrg <- st_intersection(lc.cropped, lcFenclineLrg)
+# convert back to raster so we can use sampleStratified
+lcFullSmlRast<-st_rasterize(lcFullSml)
+lcFullMedRast<-st_rasterize(lcFullMed)
+lcFullLrgRast<-st_rasterize(lcFullLrg)
+
+propForestSml <- 0
+propForestMed <- 0
+propForestLrg <- 0
+for(i in 1:nrow(lcFullSml)){
+  if(farms[j] == "S07" || farms[j] == "S10"){
+    if(lcFullSml[i,]$nlcd.landcover.PA %in% seq(41,43,1)){
+      propForestSml <- propForestSml + 1
+    } 
+  }else{
+    if(lcFullSml[i,]$clipped.area %in% seq(41,43,1)){
+    propForestSml <- propForestSml + 1
+  }   
+    }
+     
+}
+propForestSml <- propForestSml/nrow(lcFullSml)
+
+for(i in 1:nrow(lcFullMed)){
+  if(farms[j] == "S07" || farms[j] == "S10"){
+    if(lcFullMed[i,]$nlcd.landcover.PA %in% seq(41,43,1)){
+      propForestMed <- propForestMed + 1
+    } 
+  }else{
+    if(lcFullMed[i,]$clipped.area %in% seq(41,43,1)){
+    propForestMed <- propForestMed + 1
+  }   
+    }
+   
+}
+propForestMed <- propForestMed/nrow(lcFullMed)
+
+for(i in 1:nrow(lcFullLrg)){
+  if(farms[j] == "S07" || farms[j] == "S10"){
+    if(lcFullLrg[i,]$nlcd.landcover.PA %in% seq(41,43,1)){
+      propForestLrg <- propForestLrg + 1
+    } 
+  }else{
+    if(lcFullLrg[i,]$clipped.area %in% seq(41,43,1)){
+    propForestLrg <- propForestLrg + 1
+  }   
+    }
+    
+}
+propForestLrg <- propForestLrg/nrow(lcFullLrg)
+
+camDatSummary[which(camDatSummary$sid == farms[j]),]$propForest1k <- propForestSml
+camDatSummary[which(camDatSummary$sid == farms[j]),]$propForest3k <- propForestMed
+camDatSummary[which(camDatSummary$sid == farms[j]),]$propForest5k <- propForestLrg
+}
+
+write.table(camDatSummary, "./data/camDatSummary")
+camDatSummary<-read.table("./data/camDatSummary")
+# buffer the extent so that we don't cut off the farm
+# buffer this by twice the largest buffer extent
+camDatSummary
+```

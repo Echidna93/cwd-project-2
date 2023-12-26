@@ -1,0 +1,41 @@
+---
+title: "check-for-overdispersion"
+author: "Alexander Jack"
+date: "2023-12-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load packages, echo=FALSE}
+library(pscl)
+library(lmtest)
+```
+
+```{r check for overdispersion in data, echo=FALSE}
+M1 <- zeroinfl(as.vector(cwd.mat.pos.cy) ~ as.vector(cwd.mat.pos.yp) + as.vector(wsMatMax.offset) |  
+         as.vector(cwd.mat.pos.yp) + as.vector(wsMatMax.offset),
+         dist='poisson')
+
+M2 <- zeroinfl(as.vector(cwd.mat.pos.cy) ~ as.vector(cwd.mat.pos.yp) + as.vector(wsMatMax.offset) |  
+         as.vector(cwd.mat.pos.yp) + as.vector(wsMatMax.offset),
+         dist='negbin')
+
+summary(M1)
+summary(M2)
+
+# check the resid for M1
+E1<-resid(M1, type="pearson")
+N <- length(as.vector(cwd.mat.pos.cy))
+p1 <- length(coef(M1))
+sum(E1^2)/(N-p1)
+# check the resid for M2 
+E2<-resid(M2, type="pearson")
+N <- length(as.vector(cwd.mat.pos.cy))
+p2 <- length(coef(M2))
+sum(E2^2)/(N-p2)
+
+lrtest(M1,M2)
+```

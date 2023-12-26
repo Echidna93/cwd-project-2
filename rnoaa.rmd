@@ -1,0 +1,116 @@
+---
+title: "Untitled"
+author: "Alexander Jack"
+date: "2023-12-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r load packages, echo=FALSE}
+library("rgdal")
+library("raster")
+library("sf")
+library("leafsync")
+library("dplyr")
+library("ggplot2")
+library("stars")
+library(spatialEco)
+library(spatstat.random)
+library(data.table)
+library(geoR)
+library(RColorBrewer)
+library(spdep)
+library(spatialreg)
+library(classInt)
+library(rgeos)
+library(landscapemetrics)
+library(nimble)
+library(coda)
+library(prism)
+library(terra)
+library(maps)
+library(raster)
+library(rnoaa)
+```
+```{r load data, echo=FALSE}
+wiShp<-st_read("./data/shapefiles/Wisconsin_State_Boundary_24K/Wisconsin_State_Boundary_24K.shp")
+wiTwnshpShp <- st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+# use this for setting the directory for prism
+#prism_set_dl_dir("C:\\Users\\jackx\\Desktop\\prism-dat-f", create=FALSE)
+# wiscland landcover raster
+# nwiLC<-rast("./data/raster/wiscland2/wiscland2_dataset/level4/wiscland2_level4.tif")
+# raw cwd data from google drive sheets
+cwd.dat.pos<-read.table(
+  "./data/wi-dat-cwd-pos.csv",
+  sep=",", header=TRUE)
+# raw cwd data from google drive sheets
+cwd.dat.analyzed<-read.table(
+  "./data/cwd-dat-num-analyzed.csv",
+  sep=",", header=TRUE)
+# TODO also need to write the study shp
+cwdMatPos<-read.table("cwd.pos")
+cwdMatAnalyzed <- read.table("cwd.analyzed")
+prismPPTStudy <- read.table("prism.ppt.study.area")
+wsi.mat<-read.table("./data/wsicalculated") # this is the standard WSI used by WDNR 
+wsi.mat.late <- read.table("./wsiMatLate")
+year_min = 2001
+year_max = 2021
+wsi.years <- seq(year_min, year_max, 1)
+station_radius = 30 # km 
+station_data=ghcnd_stat
+  (var="SNWD") # grab ghncd stations
+# these calls can be used to get fresh PRISM data
+# get_prism_dailys(type="ppt",
+#                 minDate="2018-01-01",
+#                 maxDate="2022-05-31", 
+#                 keepZip = TRUE)
+# get_prism_dailys(type="tmax",
+#                  minDate="2000-11-01",
+#                  maxDate="2022-05-31",
+#                  keepZip = TRUE)
+# get_prism_dailys(type="tmin",
+#                  minDate="2000-11-01",
+#                  maxDate="2022-05-31",
+#                  keepZip = TRUE)
+#prism_get_dl_dir(path="C:\\Users\\jackx022\\Desktop\\prism-dat-f")
+write.table(wiStudyShp, "./wiStudyShp")
+wiStudyShpR<-read.table("./wiStudyShp")
+```
+```{r}
+wsMatMean <- matrix(0, nrow=nrow(wiStudyShp), ncol=length(seq(year_min, year_max, 1)))
+wsMatMax <- matrix(0, nrow=nrow(wiStudyShp), ncol=length(seq(year_min, year_max, 1)))
+# iterate thru the study sf object of twnshps in study area
+for(i in 1:nrow(wiStudyShp)){
+  geo<-wiStudyShp[i,]$geometry
+  uid<-wiStudyShp[i,]$uid
+  # SNWD is the element for snowdepth
+  # SNWD is reported in mm
+  # VALUE1 is the value on the first day of the month (missing = -9999)
+  centroid<-st_transform(st_centroid(geo, resolution="20m"), '+proj=longlat +nodefs')
+  # create centroid object id, lat ,lon
+  cent <- data.frame(id=wiStudyShp[i,]$uid,latitude=unlist(centroid,1)[2], longitude=unlist(centroid,2)[1])
+  nearStations<-meteo_nearby_stations(cent,var="snwd", station_data=station_data,radius=station_radius, year_min=2001, year_max=2022)
+  # creates character vector of nearby station ids
+  nearStationIDs <- c(get(uid,nearStations)[,1]) 
+  monitors <- meteo_pull_monitors(nearStationIDs, date_min="2001-12-01", date_max="2022-04-30")
+  monitors<-monitors %>% select(date,snwd) %>% na.omit() %>% group_by(date) %>% mutate(sumsnwd = sum(snwd)) %>% mutate(numsnwd = n()) %>%
+  mutate(year=as.numeric(strsplit(as.character(date), "-")[[1]][1])) %>% mutate(month=as.numeric(strsplit(as.character(date), "-")[[1]][2])) %>% mutate(day=as.numeric(strsplit(as.character(date), "-")[[1]][3]))
+  # generate average snow depth
+  # divide by 10 to convert to CM 
+   monitors<-monitors %>% select(date,year,month,day,sumsnwd,numsnwd) %>%
+    mutate(avgsnwd=(sumsnwd/numsnwd)/10)
+  # get average daily SNWD
+   # filter by months
+   monitors <- monitors %>% filter(month %in% c(1,2,3,4,5,12))
+  # get a list of objects to remove
+  # create an object for each near station
+   for(j in 2:length(wsi.years)){
+      monitorsYearPrior<-monitors %>% filter(month %in% c(12) & year==wsi.years[j-1])
+      monitorsCurrentYear<-monitors %>% filter(month %in% c(1,2,3,4,5) & year==wsi.years[j])
+      wsMatMean[i,j] <- mean(c(monitorsYearPrior$avgsnwd, monitorsCurrentYear$avgsnwd))
+      wsMatMax[i,j] <- max(c(monitorsYearPrior$avgsnwd, monitorsCurrentYear$avgsnwd))
+  }
+}
+```
