@@ -1,0 +1,687 @@
+---
+title: "create-WSI"
+output: html_document
+date: "2023-12-27"
+---
+
+```{r}
+wiShp<-st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+
+```
+
+```{r, calculate WSI matrix, echo=FALSE}
+months <- c(12, 1, 2, 3, 4)
+# constants for calculating WSI
+tminThrshld <- -17.7 # number used by MNDNR
+tmaxThrshld <- 0
+pptThrshld <- 38 # 38 cm cited
+# can set our month condition here for different measures of WSI
+minDay <- '12-01' # December 1
+maxDay <- '04-30' # April 30
+# need some spring date threshold
+# these are for the WSI index; for year n-1
+# NOTE start testing at 2017
+# years<-c(seq(2001,2022,1))
+years<-c(seq(2001, 2005, 1))
+# DON'T DELETE; only for getting 
+pdStackRaw<-pd_stack(prism_archive_subset("ppt",
+                                          "daily",
+                                          years=2001))
+# now we need to reproject these into the same CRS
+
+# looking at only at Iowa County
+#wiCountyShp<-subset(wiCountyShp,wiCountyShp$COUNTY_NAM == "Iowa")
+wiShp.e<-projectExtent(wiCountyShp, pdStackRaw)
+# great now we have pdStackWI
+# now we can crop the pdStack data into our study extent
+pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
+# first let's get these into the same CRS
+wiTwnshpShp <- wiTwnshpShp %>% mutate(uid = paste0(TWP, "-", RNG, "-", DIR_ALPHA))
+wiTwnshpSpat<-project(as(wiTwnshpShp, "SpatVector"), crs(wiCountyShp))
+wiTwnshpSpat<-as(wiTwnshpSpat,"Spatial")
+# get the spat data into the same CRS
+#wiTwnshpSpat<-as(wiTwnshpShp, "Spatial")
+cumPPT <- 0
+wsiDat <- as.data.frame(matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years)))
+yearStrings <- c()
+for(i in 1:(length(years)-1)){
+  yearStrings[i] <- paste0(years[i], "-", years[i+1])
+  }
+
+names(wsiDat) <- c("uid", yearStrings)
+k<-1
+for(i in 1:(length(years)-1)){
+  minDate <- paste0(years[i], "-", minDay)
+  maxDate <- paste0(years[i] + 1, "-", maxDay)
+  # note can use prism_archive_verify
+  # or prism_archive_clean
+  # maybe need to change this to iterate over each day
+  pptRaw<-pd_stack(prism_archive_subset("ppt",
+                                        "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tminRaw<-pd_stack(prism_archive_subset("tmin",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  pptWI <- terra::crop(pptRaw, wiShp.e)
+  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
+  tminWI <- terra::crop(tminRaw, wiShp.e)
+  ppt_by_twnshp <- terra::extract(pptWI,
+                                wiTwnshpSpat,
+                                method="bilinear")
+  tmax_by_twnshp <- terra::extract(tmaxWI,
+                                wiTwnshpSpat,
+                                method="bilinear")
+  tmin_by_twnshp <- terra::extract(tminWI,
+                                wiTwnshpSpat,
+                                method="bilinear")
+    # index for the current day
+    k <- 1
+    for(j in 1:length(ppt_by_twnshp)){
+      wsiDat[j,]$uid <- wiTwnshpShp[j,]$uid
+      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
+        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
+        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
+        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
+        # check if any of the values are NA
+        # maybe don't remove them
+        if(!(any(is.na(pptVals), is.na(tminVals), is.na(tmaxVals)) ||
+             any(is.null(pptVals), is.null(tminVals), is.null(tmaxVals)))){
+          # note that PRISM data is reported in MM; 
+          # average ppt for a given township for day k
+          avgPPT <- mean(pptVals, na.rm=TRUE) / 10 # need CM divide by 10
+          # average min. temp for a given township for day k 
+          avgTMin <- mean(tminVals, na.rm=TRUE) 
+          avgTMax <- mean(tmaxVals, na.rm=TRUE)
+          avgTmp <- mean(c(tminVals, tmaxVals),na.rm=TRUE)
+      if(avgPPT > 0 & avgTmp <= 0){
+        cumPPT = cumPPT + avgPPT
+      }
+      # snow on the ground but above freezing
+        
+      # TODO: this is where factors such as latitude can be taken into account
+      # could also take into account landscape factors here as well
+      # note that the measurements are in mm for precip and C for temp
+      # https://prism.oregonstate.edu/FAQ/#:~:text=What%20units%20are%20the%20data,want%20maps%20in%20those%20units
+      # if(cumPPT > 0 & avgTmp > 0){
+      #   # from Dawe and Boutin 2012 Journal of Wildlife Research
+      #   meltFactor <- (1.88 + 0.007 * avgPPT) * (1.8 * avgTmp) + 1.27
+      #   cumPPT = cumPPT - meltFactor # some melt factor update later with lit found
+      # }
+      if((cumPPT >= pptThrshld & avgTMin >= tminThrshld) || 
+         (cumPPT <= pptThrshld & avgTMin <= tminThrshld)){
+            wsiDat[j,i+1] <- wsiDat[j,i+1] + 1
+        }
+      if(cumPPT > pptThrshld & avgTMin < tminThrshld){
+            wsiDat[j,i+1] <- wsiDat[j,i+1] + 2
+      }
+      # in this case all  of the days in 
+      # a particular township have been processed
+          }
+      }
+      cumPPT <- 0
+      }
+}
+
+write.table(wsiDat, "./data/wsi-test") # this is for testing as a check to make sure the time period is right
+# save the WSI mat
+# transform back to sf
+wiTwnshpShp<-st_transform(wiTwnshpShp, st_crs(wiCountyStudy))
+# create new variable
+indx.i<-st_within(wiTwnshpShp, wiCountyStudy, sparse=FALSE)
+indx<-which(indx.i, indx.i==FALSE)
+wiTwnShpShpStudy<-wiTwnshpShp[- indx,]
+wiTwnshpShp <- cbind(wiTwnshpShp, wsi.r)
+# get rid of wistudyShp
+plot(wiTwnshpShp[which(wiTwnshpShp$FID %in% wiTwnShpStudy$FID),], max.plot=20)
+```
+```{r create late-season WSI mat}
+# TODO figure out how to save subsetted files
+
+# norton et. al 2021 November, December, January
+# norton et. al 2021 February, March
+# constants for calculating WSI
+tminThrshld <- -17.7 # number used by MNDNR
+tmaxThrshld <- 0
+pptThrshld <- 38 # 38 cm cited
+# can set our month condition here for different measures of WSI
+earlySeasonStartDay<- '12-01' # november 1
+earlySeasonEndDay <- '1-31' # may 10
+minDay <- '12-01' # December 1
+maxDay <- '04-30' # April 30
+# these are for the WSI index; for year n-1
+# NOTE start testing at 2017
+years<-c(seq(2001,2021,1))
+# years.s<-c(seq(2001, 2002, 1))
+# DON'T DELETE; only for getting 
+pdStackRaw<-pd_stack(prism_archive_subset("ppt",
+                                          "monthly",
+                                          years=years))
+# now we need to reproject these into the same CRS
+wiShp.e<-projectExtent(wiTwnshpShp, pdStackRaw)
+# great now we have pdStackWI
+# now we can crop the pdStack data into our study extent
+pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
+# first let's get these into the same CRS
+wiTwnShpSpat<-as(wiTwnshpShp, "Spatial")
+
+# get the spat data into the same CRS
+wiTwnShpSpat<-spTransform(wiTwnShpSpat, crs(wiCountyShp))
+cumPPT <- 0
+wsi.mat.late <- matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years))
+k<-1
+for(i in 1:(length(years)-1)){
+  
+  minDate <- paste0(years[i], "-", minDay)
+  maxDate <- paste0(years[i] + 1, "-", maxDay)
+  earlySeasonStartDate <- paste0(years[i], "-", earlySeasonStartDay)
+  earlySeasonEndDate <- paste0(years[i] + 1, "-", earlySeasonEndDay)
+  earlySeasonInterval<- abs(as.double(as.Date(as.character(earlySeasonStartDate), format="%Y-%m-%d")-
+          as.Date(as.character(earlySeasonEndDate), format="%Y-%m-%d")))
+ 
+  #if(exists)
+  
+  # note can use prism_archive_verify
+  # or prism_archive_clean
+  # maybe need to change this to iterate over each day
+  pptRaw<-pd_stack(prism_archive_subset("ppt",
+                                        "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tminRaw<-pd_stack(prism_archive_subset("tmin",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  pptWI <- terra::crop(pptRaw, wiShp.e)
+  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
+  tminWI <- terra::crop(tminRaw, wiShp.e)
+  ppt_by_twnshp <- terra::extract(pptWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmax_by_twnshp <- terra::extract(tmaxWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmin_by_twnshp <- terra::extract(tminWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+    # index for the current day
+    k <- 1
+    for(j in 1:length(ppt_by_twnshp)){
+      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
+        # need to check if any of the values are NA
+        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
+        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
+        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
+        if(!(any(is.na(pptVals), is.na(tminVals), is.na(tmaxVals)))){
+          # note that PRISM data is reported in MM; need CM divide by 10
+          avgPPT <- mean(pptVals) / 10 # average ppt for a given township for day k
+          avgTMin <- mean(tminVals) # average min. temp for a given township for day k 
+          avgTMax <- mean(tmaxVals)
+          avgTmp <- mean(c(tminVals, tmaxVals))
+      if(avgPPT > 0 & avgTmp <= 0){
+        cumPPT = cumPPT + avgPPT
+      }
+      # snow on the ground but above freezing
+        
+      # TODO: this is where factors such as latitude can be taken into account
+      # could also take into account landscape factors here as well
+      # note that the measurements are in mm for precip and C for temp
+      # https://prism.oregonstate.edu/FAQ/#:~:text=What%20units%20are%20the%20data,want%20maps%20in%20those%20units
+      
+      if(cumPPT > 0 & avgTmp > 0){
+        # from Dawe and Boutin 2012 Journal of Wildlife Research
+        # meltFactor <- (1.88 + 0.007 * avgPPT) * (1.8 * avgTmp) + 1.27
+        cumPPT = cumPPT  # some melt factor update later with lit found
+      }
+      if(k >  earlySeasonInterval){
+      if((cumPPT > pptThrshld) & avgPPT > pptThrshld){
+            wsi.mat.late[j,i] <- wsi.mat.late[j,i] + 1
+        }
+      if(cumPPT > pptThrshld & avgTMin < tminThrshld){
+            wsi.mat.late[j,i] <- wsi.mat.late[j,i] + 2
+      }
+      if(cumPPT < pptThrshld & avgTMin < tminThrshld){
+        wsi.mat.late[j,i] <- wsi.mat.late[j,i] + 1
+      }
+      # in this case all  of the days in 
+      # a particular township have been processed
+          }
+      }
+      cumPPT <- 0
+      }
+    }
+}
+write.table(wsi.mat.late, "./wsiMatLate")
+```
+
+```{r, calculate WSI matrix--snow pack only, echo=FALSE}
+tminThrshld <- -17.7 # number used by MNDNR
+tmaxThrshld <- 0
+pptThrshld <- 38 # 38 cm cited
+# can set our month condition here for different measures of WSI
+minDay <- '12-01' # December 1
+maxDay <- '04-30' # April 30
+years<-c(seq(2001,2021,1))
+# years.s<-c(seq(2001, 2002, 1))
+# DON'T DELETE; only for getting 
+pdStackRaw<-pd_stack(prism_archive_subset("ppt",
+                                          "monthly",
+                                          years=2001))
+# now we need to reproject these into the same CRS
+wiShp.e<-projectExtent(wiTwnshpShp, pdStackRaw)
+# great now we have pdStackWI
+# now we can crop the pdStack data into our study extent
+pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
+# first let's get these into the same CRS
+wiTwnShpSpat<-as(wiTwnshpShp, "Spatial")
+
+# get the spat data into the same CRS
+wiTwnShpSpat<-spTransform(wiTwnShpSpat, crs(wiShp))
+cumPPT <- 0
+wsi.mat.ppt <- matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years))
+k<-1
+for(i in 1:(length(years)-1)){
+  
+  minDate <- paste0(years[i], "-", minDay)
+  maxDate <- paste0(years[i] + 1, "-", maxDay)
+  pptRaw<-pd_stack(prism_archive_subset("ppt",
+                                        "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tminRaw<-pd_stack(prism_archive_subset("tmin",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  pptWI <- terra::crop(pptRaw, wiShp.e)
+  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
+  tminWI <- terra::crop(tminRaw, wiShp.e)
+  ppt_by_twnshp <- terra::extract(pptWI,pl
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmax_by_twnshp <- terra::extract(tmaxWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmin_by_twnshp <- terra::extract(tminWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+    # index for the current day
+    k <- 1
+    for(j in 1:length(ppt_by_twnshp)){
+      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
+        # need to check if any of the values are NA
+        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
+        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
+        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
+        if(!(any(is.na(pptVals), is.na(tminVals), is.na(tmaxVals)))){
+          # note that PRISM data is reported in MM; need CM divide by 10
+          avgPPT <- mean(pptVals) / 10 # average ppt for a given township for day k
+          avgTmp <- mean(c(tminVals, tmaxVals))
+          if(avgPPT > 0 & avgTmp <= 0){
+            cumPPT = cumPPT + avgPPT
+          }
+          # snow on the ground but above freezing
+          # could also take into account landscape factors here as well
+          # note that the measurements are in mm for precip and C for temp
+          # https://prism.oregonstate.edu/FAQ/#:~:text=What%20units%20are%20the%20data,want%20maps%20in%20those%20units
+        if(cumPPT > 0 & avgTmp > 0){
+          # from Dawe and Boutin 2012 Journal of Wildlife Research
+          meltFactor <- (1.88 + 0.007 * avgPPT) * (1.8 * avgTmp) + 1.27
+          cumPPT = cumPPT - meltFactor# some melt factor update later with lit found
+        }
+        if(cumPPT > pptThrshld){
+          wsi.mat.ppt[j,i] <- wsi.mat.ppt[j,i] + 1
+        }
+      }
+    }
+    cumPPT <- 0
+  }
+}
+write.table(wsi.mat.ppt, "./wsiMatPPT")
+```
+
+```{r, calculate WSI matrix, echo=FALSE}
+months <- c(11, 12, 1, 2, 3, 4)
+# constants for calculating WSI
+tminThrshld <- -17.7 # number used by MNDNR
+tmaxThrshld <- 0
+pptThrshld <- 38 # 38 cm cited
+# can set our month condition here for different measures of WSI
+minDay <- '12-01' # December 1
+maxDay <- '04-30' # April 30
+# need some spring date threshold
+# these are for the WSI index; for year n-1
+# NOTE start testing at 2017
+# years<-c(seq(2001,2022,1))
+years<-c(seq(2001, 2002, 1))
+# DON'T DELETE; only for getting 
+pdStackRaw<-pd_stack(prism_archive_subset("ppt",
+                                          "monthly",
+                                          years=2001))
+# now we need to reproject these into the same CRS
+
+# looking at only at Iowa County
+#wiCountyShp<-subset(wiCountyShp,wiCountyShp$COUNTY_NAM == "Iowa")
+wiShp.e<-projectExtent(wiCountyShp, pdStackRaw)
+# great now we have pdStackWI
+# now we can crop the pdStack data into our study extent
+pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
+# first let's get these into the same CRS
+wiTwnshpSpat<-project(as(wiTwnshpShp, "SpatVector"), crs(wiCountyShp))
+# get the spat data into the same CRS
+wiTwnshpSpat<-as(wiTwnshpShp, "Spatial")
+cumPPT <- 0
+wsi.mat <- matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years))
+k<-1
+for(i in 1:(length(years)-1)){
+  minDate <- paste0(years[i], "-", minDay)
+  maxDate <- paste0(years[i] + 1, "-", maxDay)
+  #if(exists)
+  
+  # note can use prism_archive_verify
+  # or prism_archive_clean
+  # maybe need to change this to iterate over each day
+  pptRaw<-pd_stack(prism_archive_subset("ppt",
+                                        "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tminRaw<-pd_stack(prism_archive_subset("tmin",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  pptWI <- terra::crop(pptRaw, wiShp.e)
+  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
+  tminWI <- terra::crop(tminRaw, wiShp.e)
+  ppt_by_twnshp <- terra::extract(pptWI,
+                                wiTwnshpSpat,
+                                method="bilinear")
+  tmax_by_twnshp <- terra::extract(tmaxWI,
+                                wiTwnshpSpat,
+                                method="bilinear")
+  tmin_by_twnshp <- terra::extract(tminWI,
+                                wiTwnshpSpat,
+                                method="bilinear")
+    # index for the current day
+    k <- 1
+    for(j in 1:length(ppt_by_twnshp)){
+      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
+        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
+        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
+        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
+        # check if any of the values are NA
+        # maybe don't remove them
+        if(!(any(is.na(pptVals), is.na(tminVals), is.na(tmaxVals)) ||
+             any(is.null(pptVals), is.null(tminVals), is.null(tmaxVals)))){
+          # note that PRISM data is reported in MM; 
+          # average ppt for a given township for day k
+          avgPPT <- mean(pptVals) / 10 # need CM divide by 10
+          # average min. temp for a given township for day k 
+          avgTMin <- mean(tminVals) 
+          avgTMax <- mean(tmaxVals)
+          avgTmp <- mean(c(tminVals, tmaxVals))
+      if(avgPPT > 0 & avgTmp <= 0){
+        cumPPT = cumPPT + avgPPT
+      }
+      # snow on the ground but above freezing
+        
+      # TODO: this is where factors such as latitude can be taken into account
+      # could also take into account landscape factors here as well
+      # note that the measurements are in mm for precip and C for temp
+      # https://prism.oregonstate.edu/FAQ/#:~:text=What%20units%20are%20the%20data,want%20maps%20in%20those%20units
+      # if(cumPPT > 0 & avgTmp > 0){
+      #   # from Dawe and Boutin 2012 Journal of Wildlife Research
+      #   meltFactor <- (1.88 + 0.007 * avgPPT) * (1.8 * avgTmp) + 1.27
+      #   cumPPT = cumPPT - meltFactor # some melt factor update later with lit found
+      # }
+      if((cumPPT >= pptThrshld & avgTMin >= tminThrshld) || 
+         (cumPPT <= pptThrshld & avgTMin <= tminThrshld)){
+            wsi.mat[j,i] <- wsi.mat[j,i] + 1
+        }
+      if(cumPPT > pptThrshld & avgTMin < tminThrshld){
+            wsi.mat[j,i] <- wsi.mat[j,i] + 2
+      }
+      # in this case all  of the days in 
+      # a particular township have been processed
+          }
+      }
+      cumPPT <- 0
+      }
+ }
+# save the WSI mat
+# transform back to sf
+wiTwnshpShp<-st_transform(wiTwnshpShp, st_crs(wiCountyStudy))
+# create new variable
+indx.i<-st_within(wiTwnshpShp, wiCountyStudy, sparse=FALSE)
+indx<-which(indx.i, indx.i==FALSE)
+wiTwnShpShpStudy<-wiTwnshpShp[- indx,]
+wiTwnshpShp <- cbind(wiTwnshpShp, wsi.r)
+# get rid of wistudyShp
+plot(wiTwnshpShp[which(wiTwnshpShp$FID %in% wiTwnShpStudy$FID),], max.plot=20)
+```
+```{r create late-season WSI mat}
+# TODO figure out how to save subsetted files
+
+# norton et. al 2021 November, December, January
+# norton et. al 2021 February, March
+# constants for calculating WSI
+tminThrshld <- -17.7 # number used by MNDNR
+tmaxThrshld <- 0
+pptThrshld <- 38 # 38 cm cited
+# can set our month condition here for different measures of WSI
+earlySeasonStartDay<- '12-01' # november 1
+earlySeasonEndDay <- '1-31' # may 10
+minDay <- '12-01' # December 1
+maxDay <- '04-30' # April 30
+# these are for the WSI index; for year n-1
+# NOTE start testing at 2017
+years<-c(seq(2001,2021,1))
+# years.s<-c(seq(2001, 2002, 1))
+# DON'T DELETE; only for getting 
+pdStackRaw<-pd_stack(prism_archive_subset("ppt",
+                                          "monthly",
+                                          years=years))
+# now we need to reproject these into the same CRS
+wiShp.e<-projectExtent(wiTwnshpShp, pdStackRaw)
+# great now we have pdStackWI
+# now we can crop the pdStack data into our study extent
+pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
+# first let's get these into the same CRS
+wiTwnShpSpat<-as(wiTwnshpShp, "Spatial")
+
+# get the spat data into the same CRS
+wiTwnShpSpat<-spTransform(wiTwnShpSpat, crs(wiCountyShp))
+cumPPT <- 0
+wsi.mat.late <- matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years))
+k<-1
+for(i in 1:(length(years)-1)){
+  
+  minDate <- paste0(years[i], "-", minDay)
+  maxDate <- paste0(years[i] + 1, "-", maxDay)
+  earlySeasonStartDate <- paste0(years[i], "-", earlySeasonStartDay)
+  earlySeasonEndDate <- paste0(years[i] + 1, "-", earlySeasonEndDay)
+  earlySeasonInterval<- abs(as.double(as.Date(as.character(earlySeasonStartDate), format="%Y-%m-%d")-
+          as.Date(as.character(earlySeasonEndDate), format="%Y-%m-%d")))
+ 
+  #if(exists)
+  
+  # note can use prism_archive_verify
+  # or prism_archive_clean
+  # maybe need to change this to iterate over each day
+  pptRaw<-pd_stack(prism_archive_subset("ppt",
+                                        "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tminRaw<-pd_stack(prism_archive_subset("tmin",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  pptWI <- terra::crop(pptRaw, wiShp.e)
+  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
+  tminWI <- terra::crop(tminRaw, wiShp.e)
+  ppt_by_twnshp <- terra::extract(pptWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmax_by_twnshp <- terra::extract(tmaxWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmin_by_twnshp <- terra::extract(tminWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+    # index for the current day
+    k <- 1
+    for(j in 1:length(ppt_by_twnshp)){
+      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
+        # need to check if any of the values are NA
+        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
+        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
+        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
+        if(!(any(is.na(pptVals), is.na(tminVals), is.na(tmaxVals)))){
+          # note that PRISM data is reported in MM; need CM divide by 10
+          avgPPT <- mean(pptVals) / 10 # average ppt for a given township for day k
+          avgTMin <- mean(tminVals) # average min. temp for a given township for day k 
+          avgTMax <- mean(tmaxVals)
+          avgTmp <- mean(c(tminVals, tmaxVals))
+      if(avgPPT > 0 & avgTmp <= 0){
+        cumPPT = cumPPT + avgPPT
+      }
+      # snow on the ground but above freezing
+        
+      # TODO: this is where factors such as latitude can be taken into account
+      # could also take into account landscape factors here as well
+      # note that the measurements are in mm for precip and C for temp
+      # https://prism.oregonstate.edu/FAQ/#:~:text=What%20units%20are%20the%20data,want%20maps%20in%20those%20units
+      
+      if(cumPPT > 0 & avgTmp > 0){
+        # from Dawe and Boutin 2012 Journal of Wildlife Research
+        # meltFactor <- (1.88 + 0.007 * avgPPT) * (1.8 * avgTmp) + 1.27
+        cumPPT = cumPPT  # some melt factor update later with lit found
+      }
+      if(k >  earlySeasonInterval){
+      if((cumPPT > pptThrshld) & avgPPT > pptThrshld){
+            wsi.mat.late[j,i] <- wsi.mat.late[j,i] + 1
+        }
+      if(cumPPT > pptThrshld & avgTMin < tminThrshld){
+            wsi.mat.late[j,i] <- wsi.mat.late[j,i] + 2
+      }
+      if(cumPPT < pptThrshld & avgTMin < tminThrshld){
+        wsi.mat.late[j,i] <- wsi.mat.late[j,i] + 1
+      }
+      # in this case all  of the days in 
+      # a particular township have been processed
+          }
+      }
+      cumPPT <- 0
+      }
+    }
+}
+write.table(wsi.mat.late, "./wsiMatLate")
+```
+
+```{r, calculate WSI matrix--snow pack only, echo=FALSE}
+tminThrshld <- -17.7 # number used by MNDNR
+tmaxThrshld <- 0
+pptThrshld <- 38 # 38 cm cited
+# can set our month condition here for different measures of WSI
+minDay <- '12-01' # December 1
+maxDay <- '04-30' # April 30
+years<-c(seq(2001,2021,1))
+# years.s<-c(seq(2001, 2002, 1))
+# DON'T DELETE; only for getting 
+pdStackRaw<-pd_stack(prism_archive_subset("ppt",
+                                          "monthly",
+                                          years=2001))
+# now we need to reproject these into the same CRS
+wiShp.e<-projectExtent(wiTwnshpShp, pdStackRaw)
+# great now we have pdStackWI
+# now we can crop the pdStack data into our study extent
+pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
+# first let's get these into the same CRS
+wiTwnShpSpat<-as(wiTwnshpShp, "Spatial")
+
+# get the spat data into the same CRS
+wiTwnShpSpat<-spTransform(wiTwnShpSpat, crs(wiShp))
+cumPPT <- 0
+wsi.mat.ppt <- matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years))
+k<-1
+for(i in 1:(length(years)-1)){
+  
+  minDate <- paste0(years[i], "-", minDay)
+  maxDate <- paste0(years[i] + 1, "-", maxDay)
+  pptRaw<-pd_stack(prism_archive_subset("ppt",
+                                        "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tminRaw<-pd_stack(prism_archive_subset("tmin",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  pptWI <- terra::crop(pptRaw, wiShp.e)
+  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
+  tminWI <- terra::crop(tminRaw, wiShp.e)
+  ppt_by_twnshp <- terra::extract(pptWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmax_by_twnshp <- terra::extract(tmaxWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmin_by_twnshp <- terra::extract(tminWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+    # index for the current day
+    k <- 1
+    for(j in 1:length(ppt_by_twnshp)){
+      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
+        # need to check if any of the values are NA
+        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
+        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
+        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
+        if(!(any(is.na(pptVals), is.na(tminVals), is.na(tmaxVals)))){
+          # note that PRISM data is reported in MM; need CM divide by 10
+          avgPPT <- mean(pptVals) / 10 # average ppt for a given township for day k
+          avgTmp <- mean(c(tminVals, tmaxVals))
+          if(avgPPT > 0 & avgTmp <= 0){
+            cumPPT = cumPPT + avgPPT
+          }
+          # snow on the ground but above freezing
+          # could also take into account landscape factors here as well
+          # note that the measurements are in mm for precip and C for temp
+          # https://prism.oregonstate.edu/FAQ/#:~:text=What%20units%20are%20the%20data,want%20maps%20in%20those%20units
+        if(cumPPT > 0 & avgTmp > 0){
+          # from Dawe and Boutin 2012 Journal of Wildlife Research
+          meltFactor <- (1.88 + 0.007 * avgPPT) * (1.8 * avgTmp) + 1.27
+          cumPPT = cumPPT - meltFactor# some melt factor update later with lit found
+        }
+        if(cumPPT > pptThrshld){
+          wsi.mat.ppt[j,i] <- wsi.mat.ppt[j,i] + 1
+        }
+      }
+    }
+    cumPPT <- 0
+  }
+}
+write.table(wsi.mat.ppt, "./wsiMatPPT")
+```

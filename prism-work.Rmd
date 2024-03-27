@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = FALSE)
 
 
 ```{r, echo=FALSE}
-library("rgdal")
+#library("rgdal")
 library("raster")
 library("sf")
 library("leafsync")
@@ -27,7 +27,7 @@ library(RColorBrewer)
 library(spdep)
 library(spatialreg)
 library(classInt)
-library(rgeos)
+#library(rgeos)
 library(landscapemetrics)
 library(nimble)
 library(coda)
@@ -35,433 +35,144 @@ library(prism)
 library(terra)
 library(maps)
 library(raster)
+library(pscl)
+library(tidyverse)
+library(CARBayesST)
+library(INLAspacetime)
+library(lme4)
+library(INLA)
+library(reshape2)
+library(inlatools)
 ```
 ```{r load data, echo=FALSE}
 wiShp<-st_read("./data/shapefiles/Wisconsin_State_Boundary_24K/Wisconsin_State_Boundary_24K.shp")
 wiTwnshpShp <- st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+wsiMast <- read.csv("./data/old/WSI-MAST-CORRECTED.csv")
+
 # use this for setting the directory for prism
 #prism_set_dl_dir("C:\\Users\\jackx\\Desktop\\prism-dat-f", create=FALSE)
 # wiscland landcover raster
 wiLC<-rast("./data/raster/wiscland2/wiscland2_dataset/level4/wiscland2_level4.tif")
 # raw cwd data from google drive sheets
-cwd.dat.pos<-read.table(
-  "./data/wi-dat-cwd-pos.csv",
-  sep=",", header=TRUE)
-# raw cwd data from google drive sheets
-cwd.dat.analyzed<-read.table(
-  "./data/cwd-dat-num-analyzed.csv",
-  sep=",", header=TRUE)
+# #cwd.dat.pos<-read.table(
+#   "./data/wi-dat-cwd-pos.csv",
+#   sep=",", header=TRUE)
+## raw cwd data from google drive sheets
+# #cwd.dat.analyzed<-read.table(
+#   "./data/cwd-dat-num-analyzed.csv",
+#   sep=",", header=TRUE)
 # TODO also need to write the study shp
-cwdMatPos<-read.table("cwd.pos")
-cwdMatAnalyzed <- read.table("cwd.analyzed")
-prismPPTStudy <- read.table("prism.ppt.study.area")
+#cwdMatPos<-read.table("cwd.pos")
+#cwdMatAnalyzed <- read.table("cwd.analyzed")
+#prismPPTStudy <- read.table("prism.ppt.study.area")
 wsi.mat<-read.table("./data/wsicalculated") # this is the standard WSI used by WDNR 
-wsi.mat.late <- read.table("./wsiMatLate")
+#wsi.mat.late <- read.table("./wsiMatLate")
 
-wsDatMax<-read.table("./wsMatMax")
-wsDatMean<-read.table("./wsMatMean")
-wsMatMax <- matrix(0, nrow=nrow(wsDatMax), ncol=ncol(wsDatMax))
-wsMatMean <- matrix(0, nrow=nrow(wsDatMean), ncol=ncol(wsDatMean))
+#wsDatMax<-read.table("./wsMatMax")
+#wsDatMean<-read.table("./wsMatMean")
+#wsMatMax <- matrix(0, nrow=nrow(wsDatMax), ncol=ncol(wsDatMax))
+#wsMatMean <- matrix(0, nrow=nrow(wsDatMean), ncol=ncol(wsDatMean))
 
-for(i in 1:nrow(wsDatMax)){
-  for(j in 1:ncol(wsDatMax)){
-    wsMatMax[i,j] = wsDatMax[i,j]
-    wsMatMean[i,j] = wsDatMean[i,j]
-    }
-}
-# these calls can be used to get fresh PRISM data
-# get_prism_dailys(type="ppt",
-#                 minDate="2018-01-01",
-#                 maxDate="2022-05-31", 
-#                 keepZip = TRUE)
-# get_prism_dailys(type="tmax",
-#                  minDate="2000-11-01",
-#                  maxDate="2022-05-31",
-#                  keepZip = TRUE)
-# get_prism_dailys(type="tmin",
-#                  minDate="2000-11-01",
-#                  maxDate="2022-05-31",
-#                  keepZip = TRUE)
-#prism_get_dl_dir(path="C:\\Users\\jackx022\\Desktop\\prism-dat-f")
-```
-```{r, calculate WSI matrix, echo=FALSE}
-months <- c(11, 12, 1, 2, 3, 4)
-# constants for calculating WSI
-tminThrshld <- -17.7 # number used by MNDNR
-tmaxThrshld <- 0
-pptThrshld <- 38 # 38 cm cited
-# can set our month condition here for different measures of WSI
-minDay <- '12-01' # December 1
-maxDay <- '04-30' # April 30
-# need some spring date threshold
-# these are for the WSI index; for year n-1
-# NOTE start testing at 2017
-# years<-c(seq(2001,2022,1))
-years<-c(seq(2001, 2002, 1))
-# DON'T DELETE; only for getting 
-pdStackRaw<-pd_stack(prism_archive_subset("ppt",
-                                          "monthly",
-                                          years=2001))
-# now we need to reproject these into the same CRS
+popDatTwnshp<-read.table("./data/popDat")
+posDat<-read.table("./data/posDatNew") # save
+sampDat<-read.table("./data/sampDatNew") # save
 
-# looking at only at Iowa County
-#wiCountyShp<-subset(wiCountyShp,wiCountyShp$COUNTY_NAM == "Iowa")
-wiShp.e<-projectExtent(wiCountyShp, pdStackRaw)
-# great now we have pdStackWI
-# now we can crop the pdStack data into our study extent
-pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
-# first let's get these into the same CRS
-wiTwnshpSpat<-project(as(wiTwnshpShp, "SpatVector"), crs(wiCountyShp))
-# get the spat data into the same CRS
-wiTwnshpSpat<-as(wiTwnshpShp, "Spatial")
-cumPPT <- 0
-wsi.mat <- matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years))
-k<-1
-for(i in 1:(length(years)-1)){
-  minDate <- paste0(years[i], "-", minDay)
-  maxDate <- paste0(years[i] + 1, "-", maxDay)
-  #if(exists)
-  
-  # note can use prism_archive_verify
-  # or prism_archive_clean
-  # maybe need to change this to iterate over each day
-  pptRaw<-pd_stack(prism_archive_subset("ppt",
-                                        "daily",
-                                         minDate=minDate,
-                                         maxDate=maxDate))
-  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
-                                         "daily",
-                                         minDate=minDate,
-                                         maxDate=maxDate))
-  tminRaw<-pd_stack(prism_archive_subset("tmin",
-                                         "daily",
-                                         minDate=minDate,
-                                         maxDate=maxDate))
-  pptWI <- terra::crop(pptRaw, wiShp.e)
-  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
-  tminWI <- terra::crop(tminRaw, wiShp.e)
-  ppt_by_twnshp <- terra::extract(pptWI,
-                                wiTwnshpSpat,
-                                method="bilinear")
-  tmax_by_twnshp <- terra::extract(tmaxWI,
-                                wiTwnshpSpat,
-                                method="bilinear")
-  tmin_by_twnshp <- terra::extract(tminWI,
-                                wiTwnshpSpat,
-                                method="bilinear")
-    # index for the current day
-    k <- 1
-    for(j in 1:length(ppt_by_twnshp)){
-      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
-        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
-        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
-        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
-        # check if any of the values are NA
-        # maybe don't remove them
-        if(!(any(is.na(pptVals), is.na(tminVals), is.na(tmaxVals)) ||
-             any(is.null(pptVals), is.null(tminVals), is.null(tmaxVals)))){
-          # note that PRISM data is reported in MM; 
-          # average ppt for a given township for day k
-          avgPPT <- mean(pptVals) / 10 # need CM divide by 10
-          # average min. temp for a given township for day k 
-          avgTMin <- mean(tminVals) 
-          avgTMax <- mean(tmaxVals)
-          avgTmp <- mean(c(tminVals, tmaxVals))
-      if(avgPPT > 0 & avgTmp <= 0){
-        cumPPT = cumPPT + avgPPT
-      }
-      # snow on the ground but above freezing
-        
-      # TODO: this is where factors such as latitude can be taken into account
-      # could also take into account landscape factors here as well
-      # note that the measurements are in mm for precip and C for temp
-      # https://prism.oregonstate.edu/FAQ/#:~:text=What%20units%20are%20the%20data,want%20maps%20in%20those%20units
-      # if(cumPPT > 0 & avgTmp > 0){
-      #   # from Dawe and Boutin 2012 Journal of Wildlife Research
-      #   meltFactor <- (1.88 + 0.007 * avgPPT) * (1.8 * avgTmp) + 1.27
-      #   cumPPT = cumPPT - meltFactor # some melt factor update later with lit found
-      # }
-      if((cumPPT >= pptThrshld & avgTMin >= tminThrshld) || 
-         (cumPPT <= pptThrshld & avgTMin <= tminThrshld)){
-            wsi.mat[j,i] <- wsi.mat[j,i] + 1
-        }
-      if(cumPPT > pptThrshld & avgTMin < tminThrshld){
-            wsi.mat[j,i] <- wsi.mat[j,i] + 2
-      }
-      # in this case all  of the days in 
-      # a particular township have been processed
-          }
-      }
-      cumPPT <- 0
-      }
- }
-# save the WSI mat
-# transform back to sf
-wiTwnshpShp<-st_transform(wiTwnshpShp, st_crs(wiCountyStudy))
-# create new variable
-indx.i<-st_within(wiTwnshpShp, wiCountyStudy, sparse=FALSE)
-indx<-which(indx.i, indx.i==FALSE)
-wiTwnShpShpStudy<-wiTwnshpShp[- indx,]
-wiTwnshpShp <- cbind(wiTwnshpShp, wsi.r)
-# get rid of wistudyShp
-plot(wiTwnshpShp[which(wiTwnshpShp$FID %in% wiTwnShpStudy$FID),], max.plot=20)
-```
-```{r create late-season WSI mat}
-# TODO figure out how to save subsetted files
+# for male and female
+posDatFemale<-read.table("./data/posDatFemale") # save
+sampDatFemale<-read.table("./data/sampDatFemale") # save
+posDatMale<-read.table("./data/posDatMale") # save
+sampDatMale<-read.table("./data/sampDatMale") # save
 
-# norton et. al 2021 November, December, January
-# norton et. al 2021 February, March
-# constants for calculating WSI
-tminThrshld <- -17.7 # number used by MNDNR
-tmaxThrshld <- 0
-pptThrshld <- 38 # 38 cm cited
-# can set our month condition here for different measures of WSI
-earlySeasonStartDay<- '12-01' # november 1
-earlySeasonEndDay <- '1-31' # may 10
-minDay <- '12-01' # December 1
-maxDay <- '04-30' # April 30
-# these are for the WSI index; for year n-1
-# NOTE start testing at 2017
-years<-c(seq(2001,2021,1))
-# years.s<-c(seq(2001, 2002, 1))
-# DON'T DELETE; only for getting 
-pdStackRaw<-pd_stack(prism_archive_subset("ppt",
-                                          "monthly",
-                                          years=years))
-# now we need to reproject these into the same CRS
-wiShp.e<-projectExtent(wiTwnshpShp, pdStackRaw)
-# great now we have pdStackWI
-# now we can crop the pdStack data into our study extent
-pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
-# first let's get these into the same CRS
-wiTwnShpSpat<-as(wiTwnshpShp, "Spatial")
 
-# get the spat data into the same CRS
-wiTwnShpSpat<-spTransform(wiTwnShpSpat, crs(wiCountyShp))
-cumPPT <- 0
-wsi.mat.late <- matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years))
-k<-1
-for(i in 1:(length(years)-1)){
-  
-  minDate <- paste0(years[i], "-", minDay)
-  maxDate <- paste0(years[i] + 1, "-", maxDay)
-  earlySeasonStartDate <- paste0(years[i], "-", earlySeasonStartDay)
-  earlySeasonEndDate <- paste0(years[i] + 1, "-", earlySeasonEndDay)
-  earlySeasonInterval<- abs(as.double(as.Date(as.character(earlySeasonStartDate), format="%Y-%m-%d")-
-          as.Date(as.character(earlySeasonEndDate), format="%Y-%m-%d")))
- 
-  #if(exists)
-  
-  # note can use prism_archive_verify
-  # or prism_archive_clean
-  # maybe need to change this to iterate over each day
-  pptRaw<-pd_stack(prism_archive_subset("ppt",
-                                        "daily",
-                                         minDate=minDate,
-                                         maxDate=maxDate))
-  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
-                                         "daily",
-                                         minDate=minDate,
-                                         maxDate=maxDate))
-  tminRaw<-pd_stack(prism_archive_subset("tmin",
-                                         "daily",
-                                         minDate=minDate,
-                                         maxDate=maxDate))
-  pptWI <- terra::crop(pptRaw, wiShp.e)
-  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
-  tminWI <- terra::crop(tminRaw, wiShp.e)
-  ppt_by_twnshp <- terra::extract(pptWI,
-                                wiTwnShpSpat,
-                                method="bilinear")
-  tmax_by_twnshp <- terra::extract(tmaxWI,
-                                wiTwnShpSpat,
-                                method="bilinear")
-  tmin_by_twnshp <- terra::extract(tminWI,
-                                wiTwnShpSpat,
-                                method="bilinear")
-    # index for the current day
-    k <- 1
-    for(j in 1:length(ppt_by_twnshp)){
-      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
-        # need to check if any of the values are NA
-        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
-        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
-        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
-        if(!(any(is.na(pptVals), is.na(tminVals), is.na(tmaxVals)))){
-          # note that PRISM data is reported in MM; need CM divide by 10
-          avgPPT <- mean(pptVals) / 10 # average ppt for a given township for day k
-          avgTMin <- mean(tminVals) # average min. temp for a given township for day k 
-          avgTMax <- mean(tmaxVals)
-          avgTmp <- mean(c(tminVals, tmaxVals))
-      if(avgPPT > 0 & avgTmp <= 0){
-        cumPPT = cumPPT + avgPPT
-      }
-      # snow on the ground but above freezing
-        
-      # TODO: this is where factors such as latitude can be taken into account
-      # could also take into account landscape factors here as well
-      # note that the measurements are in mm for precip and C for temp
-      # https://prism.oregonstate.edu/FAQ/#:~:text=What%20units%20are%20the%20data,want%20maps%20in%20those%20units
-      
-      if(cumPPT > 0 & avgTmp > 0){
-        # from Dawe and Boutin 2012 Journal of Wildlife Research
-        # meltFactor <- (1.88 + 0.007 * avgPPT) * (1.8 * avgTmp) + 1.27
-        cumPPT = cumPPT  # some melt factor update later with lit found
-      }
-      if(k >  earlySeasonInterval){
-      if((cumPPT > pptThrshld) & avgPPT > pptThrshld){
-            wsi.mat.late[j,i] <- wsi.mat.late[j,i] + 1
-        }
-      if(cumPPT > pptThrshld & avgTMin < tminThrshld){
-            wsi.mat.late[j,i] <- wsi.mat.late[j,i] + 2
-      }
-      if(cumPPT < pptThrshld & avgTMin < tminThrshld){
-        wsi.mat.late[j,i] <- wsi.mat.late[j,i] + 1
-      }
-      # in this case all  of the days in 
-      # a particular township have been processed
-          }
-      }
-      cumPPT <- 0
-      }
-    }
-}
-write.table(wsi.mat.late, "./wsiMatLate")
+posDatFemale<-posDatFemale[,-c(22)] # save
+sampDatFemale<-sampDatFemale[,-c(22)] # save
+posDatMale<-posDatMale[,-c(22)]# save
+sampDatMale<-sampDatMale[,-c(22)] # save
+
+# for(i in 1:nrow(wsDatMax)){
+#   for(j in 1:ncol(wsDatMax)){
+#     wsMatMax[i,j] = wsDatMax[i,j]
+#     wsMatMean[i,j] = wsDatMean[i,j]
+#     }
+# }
+wiCountyShp <- st_read("./data/shapefiles/County_Boundaries_24K/County_Boundaries_24K.shp")
+cwdMat2<-read.table("./data/cwd-mat-long")
+nztwnshps<-read.table("./data/nonzerotwnps")
+WIDatClean5<-read.table("./data/WITimeSeriesDat-3-14-24")
+
+# this will load the long format wsi table with both scaled and unscaled wsi indices
+# wsi is scaled by the entirety of the study area, which are those townships with at least one sample for each year in the study period
+
+#write.table(wsi.mat2, "./data/wsiDatnztwnshplong")
+wsi.mat.nz.long <- read.table("./data/wsiDatnztwnshplong")
 ```
 
-```{r, calculate WSI matrix--snow pack only, echo=FALSE}
-tminThrshld <- -17.7 # number used by MNDNR
-tmaxThrshld <- 0
-pptThrshld <- 38 # 38 cm cited
-# can set our month condition here for different measures of WSI
-minDay <- '12-01' # December 1
-maxDay <- '04-30' # April 30
-years<-c(seq(2001,2021,1))
-# years.s<-c(seq(2001, 2002, 1))
-# DON'T DELETE; only for getting 
-pdStackRaw<-pd_stack(prism_archive_subset("ppt",
-                                          "monthly",
-                                          years=2001))
-# now we need to reproject these into the same CRS
-wiShp.e<-projectExtent(wiTwnshpShp, pdStackRaw)
-# great now we have pdStackWI
-# now we can crop the pdStack data into our study extent
-pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
-# first let's get these into the same CRS
-wiTwnShpSpat<-as(wiTwnshpShp, "Spatial")
+```{r regress populations}
 
-# get the spat data into the same CRS
-wiTwnShpSpat<-spTransform(wiTwnShpSpat, crs(wiShp))
-cumPPT <- 0
-wsi.mat.ppt <- matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years))
-k<-1
-for(i in 1:(length(years)-1)){
-  
-  minDate <- paste0(years[i], "-", minDay)
-  maxDate <- paste0(years[i] + 1, "-", maxDay)
-  pptRaw<-pd_stack(prism_archive_subset("ppt",
-                                        "daily",
-                                         minDate=minDate,
-                                         maxDate=maxDate))
-  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
-                                         "daily",
-                                         minDate=minDate,
-                                         maxDate=maxDate))
-  tminRaw<-pd_stack(prism_archive_subset("tmin",
-                                         "daily",
-                                         minDate=minDate,
-                                         maxDate=maxDate))
-  pptWI <- terra::crop(pptRaw, wiShp.e)
-  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
-  tminWI <- terra::crop(tminRaw, wiShp.e)
-  ppt_by_twnshp <- terra::extract(pptWI,
-                                wiTwnShpSpat,
-                                method="bilinear")
-  tmax_by_twnshp <- terra::extract(tmaxWI,
-                                wiTwnShpSpat,
-                                method="bilinear")
-  tmin_by_twnshp <- terra::extract(tminWI,
-                                wiTwnShpSpat,
-                                method="bilinear")
-    # index for the current day
-    k <- 1
-    for(j in 1:length(ppt_by_twnshp)){
-      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
-        # need to check if any of the values are NA
-        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
-        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
-        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
-        if(!(any(is.na(pptVals), is.na(tminVals), is.na(tmaxVals)))){
-          # note that PRISM data is reported in MM; need CM divide by 10
-          avgPPT <- mean(pptVals) / 10 # average ppt for a given township for day k
-          avgTmp <- mean(c(tminVals, tmaxVals))
-          if(avgPPT > 0 & avgTmp <= 0){
-            cumPPT = cumPPT + avgPPT
-          }
-          # snow on the ground but above freezing
-          # could also take into account landscape factors here as well
-          # note that the measurements are in mm for precip and C for temp
-          # https://prism.oregonstate.edu/FAQ/#:~:text=What%20units%20are%20the%20data,want%20maps%20in%20those%20units
-        if(cumPPT > 0 & avgTmp > 0){
-          # from Dawe and Boutin 2012 Journal of Wildlife Research
-          meltFactor <- (1.88 + 0.007 * avgPPT) * (1.8 * avgTmp) + 1.27
-          cumPPT = cumPPT - meltFactor# some melt factor update later with lit found
-        }
-        if(cumPPT > pptThrshld){
-          wsi.mat.ppt[j,i] <- wsi.mat.ppt[j,i] + 1
-        }
-      }
-    }
-    cumPPT <- 0
-  }
-}
-write.table(wsi.mat.ppt, "./wsiMatPPT")
+
+
+
 ```
+
 ```{r,}
-cwd.dat.pos$uuid <- 0
-for(i in 1:nrow(cwd.dat.pos)){
-str<-strsplit(cwd.dat.pos[i,]$uid,"-")
-cwd.dat.pos[i,]$uuid <- paste0(str[[1]][2],"-",str[[1]][3],"-",str[[1]][4])
-}
-cwd.dat.analyzed$uuid <- 0
-for(i in 1:nrow(cwd.dat.analyzed)){
-str<-strsplit(cwd.dat.analyzed[i,]$uid,"-")
-cwd.dat.analyzed[i,]$uuid <- paste0(str[[1]][2],"-",str[[1]][3],"-",str[[1]][4])
-}
-for(i in 1:nrow(cwd.dat.analyzed)){
-  for(j in 1:ncol(cwd.dat.analyzed)){
-    if(is.na(cwd.dat.analyzed[i,j])){
-      cwd.dat.analyzed[i,j]<-0
-    }
-  }
-}
-for(i in 1:nrow(cwd.dat.pos)){
-  for(j in 1:ncol(cwd.dat.pos)){
-    if(is.na(cwd.dat.pos[i,j])){
-      cwd.dat.pos[i,j]<-0
-    }
-  }
-}
-
-# replace the repeated rows in analyzed data
-
-cwd.dat.analyzed <- cwd.dat.analyzed[,-1]
-cwd.dat.pos <- cwd.dat.pos[,-1]
-cwd.dat.analyzed<-cwd.dat.analyzed %>% group_by(uuid) %>% summarise_all(funs(sum)) # sum them
-cwd.dat.pos<-cwd.dat.pos %>% group_by(uuid) %>% summarise_all(funs(sum))
 wiTwnshpShp$uid <- paste0(wiTwnshpShp$TWP, "-", wiTwnshpShp$RNG, "-", wiTwnshpShp$DIR_ALPHA)
 # subtract the ones that aren't in wiTwnshpShp
-cwd.dat.pos <- cwd.dat.pos[-c(which(!c(cwd.dat.pos$uuid) %in% c(wiTwnshpShp$uid))),]
-cwd.dat.analyzed <- cwd.dat.analyzed[-c(which(!c(cwd.dat.analyzed$uuid) %in% c(wiTwnshpShp$uid))),]
+# cwd.dat.pos <- cwd.dat.pos[-c(which(!c(cwd.dat.pos$uuid) %in% c(wiTwnshpShp$uid))),]
+# cwd.dat.analyzed <- cwd.dat.analyzed[-c(which(!c(cwd.dat.aiodnalyzed$uuid) %in% c(wiTwnshpShp$uid))),]
 
-wiTwnshpShpWSI <- cbind(wiTwnshpShp, wsi.mat.late)
 
-wiStudyShp <-wiTwnshpShpWSI[-c(which(!c(wiTwnshpShpWSI$uid) %in% c(cwd.dat.pos$uuid))),]
-wiStudyShp<-wiStudyShp %>% arrange(uid)
-cwd.dat.pos <- cwd.dat.pos %>% arrange(uuid)
-cwd.dat.analyzed <- cwd.dat.analyzed %>% arrange(uuid)
+wiTwnshpShpWSI <- cbind(wiTwnshpShp, wsi.mat)
+wiTwnshpShpWSI <- wiTwnshpShpWSI %>% filter(uid %in% unique((posDat$twnshp)))
+#popDatTwnshp <- popDatTwnshp %>% filter(uid %in% unique((posDat$twnshp)))
+posDatMale <- posDatMale %>% filter(twnshp %in% unique((posDat$twnshp)))
+posDatFemale <- posDatFemale %>% filter(twnshp %in% unique((posDat$twnshp)))
+sampDatFemale <- sampDatFemale %>% filter(twnshp %in% unique((posDat$twnshp)))
+sampDatMale <- sampDatMale %>% filter(twnshp %in% unique((posDat$twnshp)))
 
-wsi.mat <- cbind(
+sampDat<-data.frame(twnshp=sampDatFemale$twnshp)
+for(i in 1:nrow(sampDatMale)){
+  for(j in 1:ncol(sampDatMale)){
+    
+  }
+}
+sampDat[,1] <- sampDatFemale[,1]
+sampDat[,2:ncol(sampDatFemale)]<-sampDatFemale[,2:ncol(sampDatFemale)]+sampDatMale[,2:ncol(sampDatFemale)]
+wiTwnshpShp<-wiTwnshpShp%>% filter(uid %in% nztwnshps[,1])
+write.table(nonzerotwnshps, "./data/nonzerotwnps")
+nztwnshps<-read_file("./data/nonzerotwnps.txt")
+wiStudyShpPoly <- as(wiTwnshpShp, "Spatial")
+W.nb <- poly2nb(wiStudyShpPoly)
+W <- nb2WB(W.nb)
+bad.indx<-which(W$num== 0)
+wiTwnshpShp <- wiTwnshpShp[-c(bad.indx),]
+
+write.table(wiTwnshpShp.nz, "./data/wiTwnshpnz")
+WITimeSeries3 <- WITimeSeries2 %>% filter(WITimeSeries2$uid %in% wiTwnshpShp.nz$uid)
+WITimeSeries3 <- WITimeSeries3 %>% filter(!(WITimeSeries3$year %in% c("1999-2001", "2022")))
+WITimeSeries3<- WITimeSeries3 %>% arrange(year,uid)
+wiTwnshpShpWSI <- wiTwnshpShpWSI %>% arrange(uid)
+wiTwnshpShp <- wiTwnshpShp[-c(bad.indx),]
+wiTwnshpShpWSI <- wiTwnshpShpWSI %>% filter(uid %in% wiTwnshpShp.nz$uid)
+
+
+
+# 
+
+#wiStudyShp <-wiTwnshpShpWSI[-c(which(!c(wiTwnshpShpWSI$uid) %in% c(cwd.dat.pos$uuid))),]
+# arrange everything
+wiTwnshpShp<-wiTwnshpShp %>% arrange(uid)
+
+
+posDat <- posDat %>% arrange(twnshp)
+sampDat <- sampDat %>% arrange(twnshp)
+#popDatTwnshp <- popDatTwnshp %>% arrange(uid)
+posDatMale <- posDatMale %>% arrange(twnshp)
+posDatFemale <- posDatFemale %>% arrange(twnshp)
+sampDatFemale <- sampDatFemale %>% arrange(twnshp)
+sampDatMale <- sampDatMale %>% arrange(twnshp)
+
+wsi.mat <- as.data.frame(cbind(
+  wiStudyShp$uid,
   wiStudyShp$V1,
   wiStudyShp$V2,
   wiStudyShp$V3,
@@ -482,22 +193,332 @@ wsi.mat <- cbind(
   wiStudyShp$V18,
   wiStudyShp$V19,
   wiStudyShp$V20
-)
-cwd.dat.analyzed <- cwd.dat.analyzed[,-which(colnames(cwd.dat.analyzed) == "uuid")]
-cwd.dat.pos <- cwd.dat.pos[,-which(colnames(cwd.dat.pos) == "uuid")]
-cwd.dat.pos <- cwd.dat.pos[,-1]
-cwd.dat.analyzed <- cwd.dat.analyzed[,-1]
-cwd.mat.pos <- matrix(0, nrow=nrow(cwd.dat.pos), ncol=ncol(cwd.dat.pos))
-cwd.mat.analyzed <- matrix(0, nrow=nrow(cwd.dat.analyzed), ncol=ncol(cwd.dat.analyzed))
-for(i in 1:nrow(cwd.mat.pos)){
-  for(j in 1:ncol(cwd.mat.pos)){
-    cwd.mat.analyzed[i,j] <- as.numeric(cwd.dat.analyzed[i,j])
-    cwd.mat.pos[i,j] <- as.numeric(cwd.dat.pos[i,j])
-    }
+))
+
+#remove uid columns
+posDat <- posDat[,-1]
+sampDat <- sampDat[,-1]
+
+posDatMale <- posDatMale[,-1]
+sampDatMale <- sampDatMale[,-1]
+posDatFemale <- posDatFemale[,-1]
+sampDatFemale <- sampDatFemale[,-1]
+
+# remove the first x cols of wsi mat; delete when I get full pop data
+# wsi.mat <- wsi.mat[,-c(1:4)]
+
+popDatTwnshp <- popDatTwnshp[,-1]
+# convert everything to matrix form
+wsiMat <- matrix(0,nrow(posDatMale), ncol(posDatMale))
+popMat <- matrix(0,nrow(posDatMale), ncol(posDatMale))
+posMat <- matrix(0,nrow(posDatMale), ncol(posDatMale))
+sampMat <- matrix(0,nrow(posDatMale), ncol(posDatMale))
+
+posMatMale <- matrix(0,nrow(posDatMale), ncol(posDatMale))
+sampMatMale <- matrix(0,nrow(posDatMale), ncol(posDatMale))
+
+posMatFemale <- matrix(0,nrow(posDatMale), ncol(posDatMale))
+sampMatFemale <- matrix(0,nrow(posDatMale), ncol(posDatMale))
+
+for(i in 1:nrow(posDat)){
+  for(j in 1:ncol(posDatFemale)){
+    #popMat[i,j] <- popDatTwnshp[i,j]
+    #posMat[i,j] <- posDat[i,j]
+    #sampMat[i,j]<- sampDat[i,j] 
+    wsiMat[i,j] <- wsi.mat[i,j]
+    posMatMale[i,j] <- posDatMale[i,j]
+    sampMatMale[i,j] <- sampDatMale[i,j]
+    posMatFemale[i,j] <- posDatFemale[i,j]
+    sampMatFemale[i,j] <- sampDatFemale[i,j]
+  }
+}
+# remove missing vals from popMat
+badIndex <- c()
+j <- 1
+# for(i in 1:nrow()){
+#   if(any(is.na(popMat[i,]))){
+#     badIndex[j] <- i
+#     j <- j + 1
+#   }
+# }
+# 
+# popMat<- popMat[-c(badIndex),]
+# posMat <- posMat[-c(badIndex),]
+# sampMat<- sampMat[-c(badIndex),] 
+# wsiMat<- wsiMat[-c(badIndex),]
+# 
+# posMatMale[i,j] <- posMatMale[-c(badIndex),]
+# sampMatMale[i,j] <- sampMatMale[-c(badIndex),]
+# posMatFemale[i,j] <- posMatFemale[-c(badIndex),]
+# sampMatFemale[i,j] <- sampMatFemale[-c(badIndex),]
+# 
+# wiStudyShp <- wiStudyShp[-c(badIndex),]
+# 
+# densMat <- matrix(0, nrow(popMat), ncol(popMat))
+for(i in 1:nrow(densMat)){
+  for(j in 1:ncol(densMat)){
+    densMat[i,j] <- popMat[i,j] / wiStudyShp[i,]$AREA
+  }
 }
 
 
+# create neighborhood matrix
+wiStudyShpPoly <- as(wiTwnshpShp, "Spatial")
+W.nb <- poly2nb(wiStudyShpPoly)
+W <- nb2WB(W.nb)
+W.listw<-nb2listw(W.nb, style="W")
+wCarCM<-as.carCM(W$adj, W$weights, W$num)
+# cwd.dat.analyzed <- cwd.dat.analyzed[,-1]
+# cwd.mat.pos <- matrix(0, nrow=nrow(cwd.dat.pos), ncol=ncol(cwd.dat.pos))
+# cwd.mat.analyzed <- matrix(0, nrow=nrow(cwd.dat.analyzed), ncol=ncol(cwd.dat.analyzed))
+# for(i in 1:nrow(cwd.mat.pos)){
+#   for(j in 1:ncol(cwd.mat.pos)){
+#     cwd.mat.analyzed[i,j] <- as.numeric(cwd.dat.analyzed[i,j])
+#     cwd.mat.pos[i,j] <- as.numeric(cwd.dat.pos[i,j])
+#     }
+# }
+
+data1<-posMat
+data2<-wsiMat
+data3<-sampMat
+df_list <- map(paste0("data",1:3),~eval(sym(.x))) # can use this for male female later
+map(df_list, ~polr())
+zeroinfl(df_list[[1]]~df_list[[2]] + df_list[[3]], data=df_list)
+overallRate <- sum(posMat)/sum(sampMat)
+
+
+wsiScaled <- matrix(0, nrow(wsiMat),ncol(wsiMat))
+for(i in 1:nrow(wsiMat)){
+  wsiScaled[i,] <- scale(wsiMat[i,])
+}
+posMat <- posMatMale + posMatFemale
+sampMat <- sampMatMale + sampMatFemale
+popMatScaled <- scale(popMat)
+posMatMaleScaled <- scale(posMat)
+
+
 ```
+
+```{r assess temporal autocorrelation}
+
+posDatMale <- posDatMale[,-1]
+posDatFemale <- posDatFemale[,-1]
+sampDatMale <- sampDatMale[,-1]
+sampDatFemale <- sampDatFemale[,-1]
+
+posDatMale <- posDatMale[,-c(ncol(posDatMale))]
+posDatFemale <- posDatFemale[,-c(ncol(posDatFemale))]
+sampDatMale <- sampDatMale[,-c(ncol(sampDatMale))]
+sampDatFemale <- sampDatFemale[,-c(ncol(sampDatFemale))]
+
+posMatMale <- matrix(0,nrow(posDatMale), ncol(posDatMale))
+sampMatMale <- matrix(0,nrow(posDatMale), ncol(posDatMale))
+
+posMatFemale <- matrix(0,nrow(posDatMale), ncol(posDatMale))
+sampMatFemale <- matrix(0,nrow(posDatMale), ncol(posDatMale))
+
+
+for(i in 1:nrow(posDat)){
+  for(j in 1:ncol(posDatFemale)){
+    #wsiMat[i,j] <- wsi.mat[i,j]
+    posMatMale[i,j] <- posDatMale[i,j]
+    sampMatMale[i,j] <- sampDatMale[i,j]
+    posMatFemale[i,j] <- posDatFemale[i,j]
+    sampMatFemale[i,j] <- sampDatFemale[i,j]
+  }
+}
+
+totalMat <- posMatMale+ posMatFemale
+totalSampMat <- sampMatMale + sampMatFemale
+
+timeSeries <- rep(0,ncol(totalMat))
+timeSeriesM <- rep(0,ncol(totalMat))
+timeSeriesF <- rep(0,ncol(totalMat))
+for(i in 1:ncol(totalMat)){
+  timeSeries[i] <- sum(totalMat[1:nrow(totalMat),i])
+  timeSeriesF[i] <- sum(posMatFemale[1:nrow(posMatFemale),i])
+  timeSeriesM[i] <- sum(posMatMale[1:nrow(posMatMale),i])
+}
+
+acfT<-acf(timeSeries, type="correlation")
+pacfT<-acf(timeSeries, type="partial")
+# plot the objects
+plot(acfT,main="Autocorrelation of Observed (M/F) CWD Cases (2002-2020)")
+plot(pacfT,main="Partial Autocorrelation of Observed (M/F) CWD Cases (2002-2020)")
+
+
+
+
+acfF<-acf(timeSeriesF, type="correlation")
+pacfF<-acf(timeSeriesF, type="partial")
+plot(acfF,main="Autocorrelation of observed CWD Cases for Females (2002-2020)")
+plot(acfF,main="Partial Autocorrelation of observed CWD Cases for Females (2002-2020)")
+
+
+
+acfM<-acf(timeSeriesM, type="correlation")
+pacfM<-acf(timeSeriesM, type="partial")
+plot(acfM,main="Autocorrelation of observed CWD Cases for Males (2002-2020)")
+plot(acfFT,main="Partial Autocorrelation of observed CWD Cases for Males (2002-2020)")
+```
+```{r write carBayesST}
+
+wiTwnshpShp$uid <- paste0(wiTwnshpShp$TWP, "-", wiTwnshpShp$RNG, "-", wiTwnshpShp$DIR_ALPHA)
+# subtract the ones that aren't in wiTwnshpShp
+# cwd.dat.pos <- cwd.dat.pos[-c(which(!c(cwd.dat.pos$uuid) %in% c(wiTwnshpShp$uid))),]
+# cwd.dat.analyzed <- cwd.dat.analyzed[-c(which(!c(cwd.dat.analyzed$uuid) %in% c(wiTwnshpShp$uid))),]
+
+wiTwnshpShpWSI <- cbind(wiTwnshpShp, wsi.mat)
+wiTwnshpShpWSI <- wiTwnshpShpWSI %>% filter(uid %in% unique((cwdDat3$uid)))
+#popDatTwnshp <- popDatTwnshp %>% filter(uid %in% unique((posDat$twnshp)))
+posDatMale <- posDatMale %>% filter(twnshp %in% unique((posDat$twnshp)))
+posDatFemale <- posDatFemale %>% filter(twnshp %in% unique((posDat$twnshp)))
+sampDatFemale <- sampDatFemale %>% filter(twnshp %in% unique((posDat$twnshp)))
+sampDatMale <- sampDatMale %>% filter(twnshp %in% unique((posDat$twnshp)))
+
+#wiStudyShp <-wiTwnshpShpWSI[-c(which(!c(wiTwnshpShpWSI$uid) %in% c(cwd.dat.pos$uuid))),]
+# arrange everything
+wiStudyShp<-wiTwnshpShpWSI %>% arrange(uid)
+
+posDat <- posDat %>% arrange(twnshp)
+sampDat <- sampDat %>% arrange(twnshp)
+#popDatTwnshp <- popDatTwnshp %>% arrange(uid)
+posDatMale <- posDatMale %>% arrange(twnshp)
+posDatFemale <- posDatFemale %>% arrange(twnshp)
+sampDatFemale <- sampDatFemale %>% arrange(twnshp)
+sampDatMale <- sampDatMale %>% arrange(twnshp)
+
+
+names(sampDatMale) <- c("uid",c(2002:2021))
+names(sampDatFemale) <- c("uid",c(2002:2021))
+names(posDatFemale) <- c("uid",c(2002:2021))
+names(posDatMale) <- c("uid",c(2002:2021))
+
+names(wsi.mat2) <- c("uid",c(2002:2021))
+
+wsi.mat[,2] <- as.numeric(wsi.mat[,2])
+wsi.mat[,3] <- as.numeric(wsi.mat[,3])
+wsi.mat[,4] <- as.numeric(wsi.mat[,4])
+wsi.mat[,5] <- as.numeric(wsi.mat[,5])
+wsi.mat[,6] <- as.numeric(wsi.mat[,6])
+wsi.mat[,7] <- as.numeric(wsi.mat[,7])
+wsi.mat[,8] <- as.numeric(wsi.mat[,8])
+wsi.mat[,9] <- as.numeric(wsi.mat[,9])
+wsi.mat[,10] <- as.numeric(wsi.mat[,10])
+wsi.mat[,11] <- as.numeric(wsi.mat[,11])
+wsi.mat[,12] <- as.numeric(wsi.mat[,12])
+wsi.mat[,13] <- as.numeric(wsi.mat[,13])
+wsi.mat[,14] <- as.numeric(wsi.mat[,14])
+wsi.mat[,15] <- as.numeric(wsi.mat[,15])
+wsi.mat[,16] <- as.numeric(wsi.mat[,16])
+wsi.mat[,17] <- as.numeric(wsi.mat[,17])
+wsi.mat[,18] <- as.numeric(wsi.mat[,18])
+wsi.mat[,19] <- as.numeric(wsi.mat[,19])
+wsi.mat[,20] <- as.numeric(wsi.mat[,20])
+wsi.mat[,21] <- as.numeric(wsi.mat[,21])
+for(i in 1:nrow(wsi.mat)){
+  wsi.mat[i,2:ncol(wsi.mat)] <- scale(unlist(wsi.mat[i,2:ncol(wsi.mat)]))[,1]
+}
+
+# remove first date in wsiDat and last in CWD dAT
+wsi.mat <- wsi.mat[,-2]
+sampDatFemale <- sampDatFemale[,-c(ncol(sampDatFemale))]
+sampDatMale <- sampDatMale[,-c(ncol(sampDatMale))]
+posDatFemale <- posDatFemale[,-c(ncol(posDatFemale))]
+posDatMale <- posDatMale[,-c(ncol(posDatMale))]
+# make everything long format
+wsi.mat2 <- as.data.frame(melt(wsi.mat))
+wsi.mat2 <- wsi.mat2 %>% arrange(year,uid)
+sampDatFemale <- as.data.frame(melt(sampDatFemale))
+sampDatMale <- as.data.frame(melt(sampDatMale))
+posDatMale <- as.data.frame(melt(posDatMale))
+posDatFemale <- as.data.frame(melt(posDatFemale))
+names(posDatMale) <- c("uid", "year", "nPosM")
+names(posDatFemale) <- c("uid", "year", "nPosF")
+names(sampDatFemale) <-c("uid", "year", "nSampF") 
+names(sampDatMale) <-c("uid", "year", "nSampM")
+names(wsi.mat2) <- c("uid", "year", "wsi")
+
+
+
+
+cwdDat2 <- merge(cwdDat, posDatMale, on.x = c("uid", "year"), on.y=c("uid", "year"))
+cwdDat2 <- merge(cwdDat2, posDatFemale, on.x = c("uid", "year"), on.y=c("uid", "year"))
+cwdDat2 <- merge(cwdDat2, sampDatFemale,on.x = c("uid", "year"), on.y=c("uid", "year"))
+cwdDat2 <- merge(cwdDat2, sampDatMale,on.x = c("uid", "year"), on.y=c("uid", "year"))
+cwdDat2 <- merge(cwdDat2, wsi.mat2,on.x = c("uid", "year"), on.y=c("uid", "year"))
+cwdDat2 <- cwdDat2 %>% arrange(year,uid)
+
+#write.table(cwdDat2,"./data/cwd-long") # save table
+cwdDat3 <- read.table("./data/cwd-long")
+
+cwdDat3 <- cwdDat3 %>% mutate(nPosT = nPosM + nPosF)
+cwdDat3 <- cwdDat3 %>% mutate(nSampT = nSampM + nSampF)
+# reorder so response is on the left
+cwdDat2 <- cwdDat2[,c(1,2,7,3,4,5,6,9)]
+# create adjacency matrices
+
+cwdDat3 <- cwdDat3 %>% arrange(year,uid)
+wiStudyShp <- wiStudyShp %>% arrange(uid)
+wiStudyShpPoly <- as(wiTwnshpShp, "Spatial")
+W.nb <- poly2nb(wiStudyShpPoly)
+W <- nb2mat(W.nb, style="B")
+W<-listw2mat(W)
+
+
+
+formula <- nPosT ~ wsi + year
+chains <- ST.CARar(formula = formula, family = "poisson", data = cwdDat3, W = W, burnin = 50000, n.sample = 80000, thin = 50, AR=1, n.chains=3, n.cores=3)
+chains$summary.results
+chains$modelfit
+chains$mcmc.info
+chains$accept
+
+# check male and female
+formulaM <- nPosM ~ offset(log(nSampM + 1)) + wsi
+chainsM <- ST.CARar(formula = formulaM, family = "poisson", data = cwdDat3, W = W, burnin = 110000, n.sample = 200000, thin = 50, AR=1, n.chains=3, n.cores=3)
+chainsM$summary.results
+
+
+# check female
+formulaF <- nPosF ~ offset(log(nSampF + 1)) + wsi
+chainsF <- ST.CARar(formula = formulaF, family = "poisson", data = cwdDat3, W = W, burnin = 110000, n.sample = 200000, thin = 50, AR=1, n.chains=3, n.cores=3)
+chainsF$summary.results
+
+
+chainsF$summary.results
+chainsM$summary.results
+chains$summary.results
+plot(chainsF$samples$beta)
+plot(chainsM$samples$beta)
+plot(chains$samples$beta)
+
+plot(chainsF$residuals)
+plot(chainsM$residuals)
+plot(chains$residuals)
+
+# do the same with an AR(2) model
+formula <- nPosT ~ offset(log(nSampT + 1)) + wsi
+chains2 <- ST.CARar(formula = formula, family = "poisson", data = cwdDat3, W = W, burnin = 110000, n.sample = 200000, thin = 50, AR=2, n.chains=3, n.cores=3)
+
+# check male and female
+formulaM <- nPosM ~ offset(log(nSampM + 1)) + wsi
+chainsM2 <- ST.CARar(formula = formulaM, family = "poisson", data = cwdDat3, W = W, burnin = 110000, n.sample = 200000, thin = 50, AR=2, n.chains=3, n.cores=3)
+chainsM$summary.results
+
+
+# check female
+formulaF <- nPosF ~ offset(log(nSampF + 1)) + wsi
+chainsF2 <- ST.CARar(formula = formulaF, family = "poisson", data = cwdDat3, W = W, burnin = 110000, n.sample = 200000, thin = 50, AR=2, n.chains=3, n.cores=3)
+chainsF2$summary.results
+
+
+# no lag
+chainsFnl<-ST.CARsepspatial(formula=formulaF, family="poisson", data=cwdDat3, W=W, burnin=110000, n.sample=200000, thin=50, n.chains=3, n.cores=3)
+chainsMnl<-ST.CARsepspatial(formula=formulaM, family="poisson", data=cwdDat3, W=W, burnin=110000, n.sample=200000, thin=50, n.chains=3, n.cores=3)
+chainsnl<-ST.CARsepspatial(formula=formula, family="poisson", data=cwdDat3, W=W, burnin=110000, n.sample=200000, thin=50, n.chains=3, n.cores=3)
+```
+
 ```{r, get late season WSI mat for study area}
 wiTwnshpShpWSILate<-cbind(wiTwnshpShp, wsi.mat.late)
 wiStudyShpLate <-wiTwnshpShpWSILate[-c(which(!c(wiTwnshpShpWSILate$uid) %in% c(cwd.dat.pos$uuid))),]
@@ -541,597 +562,13 @@ for(i in 1:nrow(cwd.mat.pos)){
 
 ```
 
-##### ANALYSIS
-```{r, model 1 no spatial component}
-# year samp will be the number of years we're getting CWD samples for
-yearSamp<-c(seq(2003,2022, 1))
-# let's create our expected value
-# note that we assume the "grand" mean to be temporally constant
-# but allow it to vary across spatial units
-cwd.r <- rep(0, ncol(cwd.dat.analyzed2))
-for(i in 1:ncol(cwd.dat.analyzed2)){
-cwd.r[i]<-sum(cwd.mat.pos2[,i])/sum(cwd.dat.analyzed2[,i])    
-}
-
-# TODO: AVERAGE over years for WSI
-dZIP <- nimbleFunction(
- run = function(x = integer(), lambda = double(),
-                zeroProb = double(), log = logical(0, default = 0)) {
-   returnType(double())
-   ## First handle non-zero data
-   if (x != 0) {
-       ## return the log probability if log = TRUE
-       if (log) return(dpois(x, lambda, log = TRUE) + log(1 - zeroProb))
-       ## or the probability if log = FALSE
-      else return((1 - zeroProb) * dpois(x, lambda, log = FALSE))
-   }
-   ## From here down we know x is 0
-   totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
-   if (log) return(log(totalProbZero))
-   return(totalProbZero)
- })
-
-registerDistributions(list(
-    dZIP = list(
-        BUGSdist = "dZIP(lambda, zeroProb)",
-        discrete = TRUE,
-        range = c(0, Inf),
-        types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
-     )))
-
-modelcode <- nimbleCode({
-    ## priors
-    beta0 ~ dnorm(0.0, sd = 5)  # vague prior on intercept
-    gamma0 ~ dnorm(0.0, sd=5)
-    beta1~ dnorm(0.0, sd = 1)
-    gamma1~ dnorm(0.0, sd = 1)
-  for (i in 1 : n.twnshps) {
-    for(j in 2: n.years){
-        log(lambda[i,j])  <- s[i,j-1]*mu.hat[j-1] + beta1*precip[i,j] + beta0 
-        logit(psi[i,j]) <- s[i,j-1]*mu.hat[j-1] + gamma1*precip[i,j] + gamma0
-        y[i,j] ~ dZIP(lambda[i,j], psi[i,j])
-      }
-    }
-})
-
-p <- matrix(0, nrow=nrow(cwd.mat.pos2), ncol=ncol(cwd.mat.pos2))
-## Specify data and initial values
-constants <- list(n.twnshps = nrow(cwd.dat.analyzed2),
-                  mu.hat=cwd.r,
-                  n.years=length(yearSamp))
-data <- list(y = cwd.mat.pos2, s = cwd.dat.analyzed2, precip=wsi.mat.num)
-inits <- list(beta0 = 0, beta1=0, gamma1=0, gamma0 = 0)
-
-
-## Build/Compile model, including steps:
-## (1) build model (2) compile model in C++
-## (3) specify MCMC parameters to collect and create MCMC algorithm
-cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
-c.cwdspatmodel <- compileNimble(cwdspatmodel)
-
-confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0', 'beta1', 'gamma1','gamma0'),  enableWAIC = TRUE)
-cwdspatmcmc <- buildMCMC(confMC)
-c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel)
-## Run MCMC
-mcmc.out <- runMCMC(c.cwdspatmcmc,
-                    niter=30000,
-                    nburnin=15000,
-                    thin=5,
-                    nchains=3,
-                    WAIC=TRUE)
-## convert post samples as mcmc.list object and diagnose convergence using coda functions
-post.samples <- mcmc.list(sapply(mcmc.out$samples,
-                                 as.mcmc,simplify=FALSE))
-pars <- c("beta0",'gamma0', 'beta1', 'gamma1')
-plot(post.samples, trace=TRUE, density=FALSE)
-gelman.plot(post.samples)
-autocorr.plot(post.samples)
-## posterior summary
-summary(post.samples)
-## model assessment using WAIC value
-mcmc.out$WAIC
-```
-```{r, model 2 spat}
-# year samp will be the number of years we're getting CWD samples for
-yearSamp<-c(seq(2003,2022, 1))
-# let's create our expected value
-cwd.r <- rep(0, ncol(cwdMatPos))
-for(j in 1:ncol(cwdMatPos)){
-  cwd.r[j]<-sum(cwdMatPos[,j])/sum(cwdMatAnalyzed[,j])  
-}
-# create neighborhood matrix
-W.nb <- poly2nb(wiStudyShp)
-W <- nb2WB(W.nb)
-# TODO: AVERAGE over years for WSI
-dZIP <- nimbleFunction(
- run = function(x = integer(), lambda = double(),
-                zeroProb = double(), log = logical(0, default = 0)) {
-   returnType(double())
-   ## First handle non-zero data
-   if (x != 0) {
-       ## return the log probability if log = TRUE
-       if (log) return(dpois(x, lambda, log = TRUE) + log(1 - zeroProb))
-       ## or the probability if log = FALSE
-      else return((1 - zeroProb) * dpois(x, lambda, log = FALSE))
-   }
-   ## From here down we know x is 0
-   totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
-   if (log) return(log(totalProbZero))
-   return(totalProbZero)
- })
-
-registerDistributions(list(
-    dZIP = list(
-        BUGSdist = "dZIP(lambda, zeroProb)",
-        discrete = TRUE,
-        range = c(0, Inf),
-        types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
-     )))
-
-modelcode <- nimbleCode({
-    ## priors
-    beta0 ~ dnorm(0.0, sd = 5)  # vague prior on intercept
-    gamma0 ~ dnorm(0.0, sd=5)  
-    beta1~ dnorm(0.0, sd = 1)
-    gamma1~ dnorm(0.0, sd = 1)
-    prec.c ~ dgamma(0.1, 0.1)
-    prec.ci ~ dgamma(0.1, 0.1)
-    prec.h ~ dgamma(0.1, 0.1)
-    prec.hi ~ dgamma(0.1, 0.1)
-        # CAR model for spatial random effects
-    phi[1:n.twnshps] ~ dcar_normal(adj[1:L], weights[1:L], num[1:n.twnshps], prec.c, zero_mean=0)
-    psi[1:n.twnshps] ~ dcar_normal(adj[1:L], weights[1:L], num[1:n.twnshps], prec.ci, zero_mean=0)
-  # likelihood
-  for (i in 1 : n.twnshps) {
-    for(j in 2: n.years){
-        # lambda[i,j]  ~ dnorm(0, sd=tau.t)
-        # lambdaHat[i,j] ~ dnorm(0, sd=tau.t.hat)
-        log(mu[i,j]) <-  s[i,j]*mu.hat[j] + beta1*precip[i,j] + phi[i] + beta0 
-        logit(p[i,j]) <- s[i,j]*mu.hat[j] + gamma1*precip[i,j] + psi[i] + gamma0
-        y[i,j] ~ dZIP(mu[i,j], p[i,j])
-      }
-        epsilon[i] <- theta[i] + phi[i]
-        epsilon.hat[i] <- psi[i] + eta[i]
-        theta[i] ~ dnorm(0.0, prec.c)
-        eta[i] ~ dnorm(0.0, prec.ci)
-    }
-        ## calculate alpha
-    sd.h <- sd(phi[1:n.twnshps]) # marginal SD of heterogeneity effects
-    sd.c <- sd(theta[1:n.twnshps])   # marginal SD of clustering (spatial) effects
-    sd.hi <- sd(psi[1:n.twnshps])
-    sd.ci <- sd(eta[1:n.twnshps])
-    alpha <- sd.h / (sd.c + sd.h)
-    alpha.i <- sd.hi/(sd.ci + sd.hi)
-    sigma2 <- 1/prec.h
-    tau2 <- 1/prec.c
-    sigma2i <- 1/prec.hi
-    tau2i <- 1/prec.ci
-})
-
-p <- matrix(0, nrow=nrow(cwdMatAnalyzed), ncol=ncol(cwdMatAnalyzed))
-lambda = matrix(0, nrow=nrow(cwdMatAnalyzed), ncol=ncol(cwdMatAnalyzed))
-## Specify data and initial values
-constants <- list(n.twnshps = nrow(cwdMatAnalyzed),
-                  mu.hat=cwd.r,
-                  n.years=length(yearSamp),
-                  L = length(W$adj),
-                  adj=W$adj,
-                  weights=W$weights,
-                  num=W$num)
-data <- list(y = cwdMatPos,
-             s = cwdMatAnalyzed,
-             lambdaHat=lambdaHat,
-             lambda = lambda,
-             p = p,
-             precip=wsi.mat)
-inits <- list(beta0 = 0,
-              beta1=0,
-              gamma1=0,
-              gamma0 = 0,
-              prec.t=1,
-              prec.t.hat=1
-              )
-
-
-## Build/Compile model, including steps:
-## (1) build model (2) compile model in C++
-## (3) specify MCMC parameters to collect and create MCMC algorithm
-cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
-c.cwdspatmodel <- compileNimble(cwdspatmodel)
-
-confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0', 'beta1', 'gamma1','gamma0'),  enableWAIC = TRUE)
-cwdspatmcmc <- buildMCMC(confMC)
-c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel)
-## Run MCMC
-mcmc.out <- runMCMC(c.cwdspatmcmc,
-                    niter=4000,
-                    nburnin=1000,
-                    thin=5,
-                    nchains=5,
-                    WAIC=TRUE)
-## convert post samples as mcmc.list object and diagnose convergence using coda functions
-post.samples <- mcmc.list(sapply(mcmc.out$samples,
-                                 as.mcmc,simplify=FALSE))
-pars <- c("beta0",'gamma0', 'beta1', 'gamma1')
-plot(post.samples, trace=TRUE, density=FALSE)
-gelman.plot(post.samples)
-autocorr.plot(post.samples)
-## posterior summary
-summary(post.samples)
-## model assessment using WAIC value
-mcmc.out$WAIC
-```
-```{r spatiotemporal}
-# year samp will be the number of years we're getting CWD samples for
-yearSamp<-c(seq(2003,2022, 1))
-# let's create our expected value
-cwd.r <- rep(0, ncol(cwdMatPos))
-for(j in 1:ncol(cwdMatPos)){
-  cwd.r[j]<-sum(cwdMatPos[,j])/sum(cwdMatAnalyzed[,j])  
-}
-cwd.p = matrix(0, nrow=nrow(cwdMatPos), ncol=ncol(cwdMatPos))
-for(i in 1:nrow(cwd.p))
-  for(j in 1:ncol(cwd.p)){{
-    if(j == 1){
-      cwd.p[i,j] = 0
-    }else{
-      cwd.p[i,j] = cwdMatPos[i,j-1]
-    }
-  }}
-# create neighborhood matrix
-W.nb <- poly2nb(wiStudyShp)
-W <- nb2WB(W.nb)
-# TODO: AVERAGE over years for WSI
-dZIP <- nimbleFunction(
- run = function(x = integer(), lambda = double(),
-                zeroProb = double(), log = logical(0, default = 0)) {
-   returnType(double())
-   ## First handle non-zero data
-   if (x != 0) {
-       ## return the log probability if log = TRUE
-       if (log) return(dpois(x, lambda, log = TRUE) + log(1 - zeroProb))
-       ## or the probability if log = FALSE
-      else return((1 - zeroProb) * dpois(x, lambda, log = FALSE))
-   }
-   ## From here down we know x is 0
-   totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
-   if (log) return(log(totalProbZero))
-   return(totalProbZero)
- })
-
-registerDistributions(list(
-    dZIP = list(
-        BUGSdist = "dZIP(lambda, zeroProb)",
-        discrete = TRUE,
-        range = c(0, Inf),
-        types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
-     )))
-
-modelcode <- nimbleCode({
-    ## priors
-    beta0 ~ dnorm(0.0, sd = 5)  # vague prior on intercept
-    gamma0 ~ dnorm(0.0, sd=5)  
-    beta1~ dnorm(0.0, sd = 1)
-    gamma1~ dnorm(0.0, sd = 1)
-    theta.c ~ dnorm(0.0, sd=1)
-    theta.ci ~ dnorm(0.0, sd=1)
-    prec.c ~ dgamma(0.1, 0.1)
-    prec.ci ~ dgamma(0.1, 0.1)
-    prec.h ~ dgamma(0.1, 0.1)
-    prec.hi ~ dgamma(0.1, 0.1)
-    prec.t ~ dgamma(0.1, 0.1)
-    prec.t.hat~dgamma(0.1,0.1)
-    # CAR model for spatial random effects
-    phi[1:n.twnshps] ~ dcar_normal(adj[1:L], weights[1:L], num[1:n.twnshps], prec.c, zero_mean=0)
-    psi[1:n.twnshps] ~ dcar_normal(adj[1:L], weights[1:L], num[1:n.twnshps], prec.ci, zero_mean=0)
-    # for(i in 1:n.twnshps){
-    #   for(j in 1:n.years){
-    #     omega[i,j] ~ dnorm(cwd.p[i,j], sd=prec.t)
-    #     omegaHat[i,j] ~ dnorm(cwd.p[i,j], sd=prec.t.hat)
-    #   }
-    # }
-        # likelihood
-  for (i in 1 : n.twnshps) {
-    for(j in 2: n.years){
-        omega[i,j] ~ dnorm(s[i,j-1]*mu.hat[j-1], prec.t)
-        omegaHat[i,j] ~ dnorm(s[i,j-1]*mu.hat[j-1], prec.t.hat)
-        log(mu[i,j]) <- s[i,j]*mu.hat[j]  + theta.c*omega[i,j]+ beta1*precip[i,j] + phi[i] + beta0 
-        logit(p[i,j]) <- s[i,j]*mu.hat[j] + theta.ci * omegaHat[i,j] + gamma1*precip[i,j] + psi[i] + gamma0
-        # lambda[i,j]  ~ dnorm(0, sd=tau.t)
-        # lambdaHat[i,j] ~ dnorm(0, sd=tau.t.hat)
-        y[i,j] ~ dZIP(mu[i,j], p[i,j])
-      }
-        epsilon[i] <- theta[i] + phi[i]
-        epsilon.hat[i] <- psi[i] + eta[i]
-        theta[i] ~ dnorm(0.0, prec.c)
-        eta[i] ~ dnorm(0.0, prec.ci)
-    }
-        ## calculate alpha
-    sd.h <- sd(phi[1:n.twnshps]) # marginal SD of heterogeneity effects
-    sd.c <- sd(theta[1:n.twnshps])   # marginal SD of clustering (spatial) effects
-    sd.hi <- sd(psi[1:n.twnshps])
-    sd.ci <- sd(eta[1:n.twnshps])
-    alpha <- sd.h / (sd.c + sd.h)
-    alpha.i <- sd.hi/(sd.ci + sd.hi)
-    sigma2 <- 1/prec.h
-    tau2 <- 1/prec.c
-    sigma2i <- 1/prec.hi
-    tau2i <- 1/prec.ci
-    tau.t <-1/prec.t
-    tau.t.hat <- 1/prec.t.hat
-})
-
-p <- matrix(0, nrow=nrow(cwdMatAnalyzed), ncol=ncol(cwdMatAnalyzed))
-## Specify data and initial values
-constants <- list(n.twnshps = nrow(cwdMatAnalyzed),
-                  mu.hat=cwd.r,
-                  n.years=length(yearSamp),
-                  L = length(W$adj),
-                  adj=W$adj,
-                  weights=W$weights,
-                  num=W$num)
-data <- list(y = cwdMatPos,
-             s = cwdMatAnalyzed,
-             cwd.p = cwdMatPos,
-             p = p,
-             precip=wsi.mat)
-inits <- list(beta0 = 0,
-              beta1=0,
-              theta.c = 0,
-              theta.ci = 0,
-              gamma1=0,
-              gamma0 = 0
-              )
-
-
-## Build/Compile model, including steps:
-## (1) build model (2) compile model in C++
-## (3) specify MCMC parameters to collect and create MCMC algorithm
-cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
-c.cwdspatmodel <- compileNimble(cwdspatmodel)
-
-confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0', 'beta1',
-                                                   'gamma1','gamma0',
-                                                   'prec.t', 'prec.t.hat',
-                                                   'theta.c', 'theta.ci'),
-                        enableWAIC = TRUE)
-cwdspatmcmc <- buildMCMC(confMC)
-c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel)
-## Run MCMC
-mcmc.out <- runMCMC(c.cwdspatmcmc,
-                    niter=8000,
-                    nburnin=5000,
-                    thin = 2,
-                    thin2 = 2,
-                    nchains=4,
-                    WAIC=TRUE)
-## convert post samples as mcmc.list object and diagnose convergence using coda functions
-post.samples <- mcmc.list(sapply(mcmc.out$samples,
-                                 as.mcmc,simplify=FALSE))
-pars <- c("beta0",'gamma0', 'beta1', 'gamma1', 'theta.c', 'theta.ci')
-plot(post.samples, trace=TRUE, density=FALSE)
-gelman.plot(post.samples)
-autocorr.plot(post.samples)
-## posterior summary
-summary(post.samples)
-## model assessment using WAIC value
-mcmc.out$WAIC
-```
-```{r spatiotemporal, full season WSI}
-
-# year samp will be the number of years we're getting CWD samples for
-yearSamp<-c(seq(2003,2022, 1))
-# let's create our expected value
-
-dZIP <- nimbleFunction(
- run = function(x = integer(), lambda = double(),
-                zeroProb = double(), log = logical(0, default = 0)) {
-   returnType(double())
-   ## First handle non-zero data
-   if (x != 0) {
-       ## return the log probability if log = TRUE
-       return(dpois(x, lambda, log = TRUE) + log(1 - zeroProb))
-       ## or the probability if log = FALSE
-      #else return((1 - zeroProb) * dpois(x, lambda, log = FALSE))
-   }
-   ## From here down we know x is 0
-   totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
-   return(log(totalProbZero))
-   #return(totalProbZero)
- })
-
-registerDistributions(list(
-    dZIP = list(
-        BUGSdist = "dZIP(lambda, zeroProb)",
-        discrete = TRUE,
-        range = c(0, Inf),
-        types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
-     )))
-
-modelcode <- nimbleCode({
-  
-    ## priors
-    beta0 ~ dnorm(0.0, sd = prec.beta0)  # vague prior on intercept
-    gamma0 ~ dnorm(0.0, sd=prec.gamma0)   
-    beta1~ dnorm(0.0, sd = prec.gamma1)
-    gamma1~ dnorm(0.0, sd = prec.beta1)
-    theta.c ~ dnorm(0.0, sd=prec.theta.c)
-    theta.ci ~ dnorm(0.0, sd=prec.theta.ci)
-    # priors for precision of normal distributions
-    prec.beta0 ~ dgamma(0.1, 0.1)
-    prec.gamma0 ~ dgamma(0.1,0.1)
-    prec.gamma1 ~ dgamma(0.1,0.1)
-    prec.beta1 ~ dgamma(0.1,0.1)
-    prec.theta.c ~dgamma(0.1, 0.1)
-    prec.theta.ci ~dgamma(0.1,0.1)
-    prec.c ~ dgamma(0.1, 0.1)
-    prec.ci ~ dgamma(0.1, 0.1)
-    # prec.h ~ dgamma(0.1, 0.1)
-    # prec.hi ~ dgamma(0.1, 0.1)
-    ## calculate alpha
-    # sd.c <- sd(phi[1:N]) # marginal SD of heterogeneity effects
-    # sd.h <- sd(theta[1:N])   # marginal SD of clustering (spatial) effects
-    # sd.ci <- sd(psi[1:N]) # marginal SD of heteorgenity effects -- zero inflated process
-    # sd.hi <- sd(theta.i[1:N]) # marginal SD of clustering effects -- zero inflated process
-    # alpha <- sd.h / (sd.c + sd.h)
-    # alpha.i <- sd.hi/(sd.ci + sd.hi)
-    # spatial random effects
-    phi[1:N] ~ dcar_normal(adj[1:L], weights[1:L], num[1:N], tau=prec.c)
-    psi[1:N] ~ dcar_normal(adj[1:L], weights[1:L], num[1:N], tau=prec.ci)
-    # likelihood
-  for (i in 1 : N) {
-    for(j in 2: n.years){
-
-        omega[i,j]<- s[i,j-1]*mu.hat        
-        omegaHat[i,j] <- s[i,j-1]*mu.hat
-        mu[i,j] <- s[i,j]*mu.hat + theta.c*cwd.p[i,j-1] + phi[i] + beta1*precip[i,j] + beta0 
-        logit(p[i,j]) <- s[i,j]*mu.hat + theta.ci*cwd.p[i,j-1] + gamma1*precip[i,j] + psi[i] + gamma0
-        y[i,j] ~ dZIP(mu[i,j], p[i,j])
-    }
-        }
-     # CAR model for spatial random effects
-})
-## Specify data and initial values
-constants <- list(N = nrow(cwd.mat.analyzed),
-                  mu.hat=cwd.r,
-                  n.years=length(yearSamp),
-                  L = length(W$adj),
-                  adj=W$adj,
-                  weights=W$weights,
-                  num=W$num)
-data <- list(y = cwd.mat.pos,
-             s = cwd.mat.analyzed,
-             precip=wsi.mat,
-             cwd.p = cwd.mat.pos)
-inits <- list(beta1=0,
-              beta0=1,
-              theta.c = 0,
-              theta.ci = 0,
-              gamma1=0,
-              gamma0=1,
-              prec.beta0 = 1,
-              prec.gamma0 = 1,
-              prec.gamma1 = 1,
-              prec.beta1 = 1,
-              prec.theta.c = 1,
-              prec.theta.ci = 1,
-              prec.c = 1,
-              prec.ci = 1,
-              phi = rep(0, nrow(cwd.mat.pos)),
-              psi = rep(0, nrow(cwd.mat.pos)))
-
-
-## Build/Compile model, including steps:
-## (1) build model (2) compile model in C++
-## (3) specify MCMC parameters to collect and create MCMC algorithm
-cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
-c.cwdspatmodel <- compileNimble(cwdspatmodel, resetFunctions = TRUE)
-
-confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0', 'beta1',
-                                                   'gamma1','gamma0'
-                                                  ),
-                        enableWAIC = TRUE)
-cwdspatmcmc <- buildMCMC(confMC)
-c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel, resetFunctions = TRUE)## Run MCMC
-
-# theta <- rep(0, nrow(cwd.mat.pos))
-# theta.i <- rep(0, nrow(cwd.mat.pos))
-mcmc.out <- runMCMC(c.cwdspatmcmc,
-                    niter=20000,
-                    nburnin=5000,
-                    thin = 2,
-                    nchains=5,
-                    WAIC=TRUE)
-## convert post samples as mcmc.list object and diagnose convergence using coda functions
-post.samples <- mcmc.list(sapply(mcmc.out$samples,
-                                 as.mcmc,simplify=FALSE))
-pars <- c("beta0",'gamma0', 'beta1', 'gamma1', 'theta.c', 'theta.ci')
-plot(post.samples, trace=TRUE, density=FALSE)
-gelman.plot(post.samples)
-autocorr.plot(post.samples)
-## posterior summary
-summary(post.samples)
-## model assessment using WAIC value
-mcmc.out$WAIC
-```
-
-
 ```{r clean data, remove islands}
  
 # create neighborhood matrix
-wiStudyShpPoly <- as(wiStudyShp, "Spatial")
-W.nb <- poly2nb(wiStudyShpPoly)
-W <- nb2WB(W.nb)
-bad.indx<-which(W$num== 0)
-
-# remove islands
-cwd.mat.pos <- cwd.mat.pos[-c(bad.indx),]
-cwd.mat.analyzed <- cwd.mat.analyzed[-c(bad.indx),]
-wsi.mat <- wsi.mat[-c(bad.indx),]
-wiStudyShp <- wiStudyShp[-c(bad.indx),]
-wiStudyShpPoly <- as(wiStudyShp, "Spatial")
+wiStudyShpPoly <- as(wiTwnshpShp.nz, "Spatial")
 W.nb <- poly2nb(wiStudyShpPoly)
 W <- nb2WB(W.nb)
 wCarCM<-as.carCM(W$adj, W$weights, W$num)
-cwd.r<-sum(cwd.mat.pos)/sum(cwd.mat.analyzed)
-# get all of the row numbers where nothing has been analyzed for the entire period
-zeros <- c()
-k <- 1
-for(i in 1:nrow(cwd.mat.analyzed)){
- if(sum(cwd.mat.analyzed[i,]) == 0){
-  zeros[k] <- i
-  k = k + 1}}
-
-cwd.mat.pos <- cwd.mat.pos[-c(zeros),]
-cwd.mat.analyzed <- cwd.mat.analyzed[-c(zeros),]
-wiStudyShp <- wiStudyShp[-c(zeros),]
-wsi.mat <- wsi.mat[-c(zeros),]
-
-cwd.mat.pos <- cwd.mat.pos[-c(456),]
-cwd.mat.analyzed <- cwd.mat.analyzed[-c(456),]
-wiStudyShp <- wiStudyShp[-c(456),]
-wsi.mat <- wsi.mat[-c(456),]
-wiStudyShpPoly <- as(wiStudyShp, "Spatial")
-W.nb <- poly2nb(wiStudyShpPoly)
-W <- nb2WB(W.nb)
-wCarCM<-as.carCM(W$adj, W$weights, W$num)
-cwd.r<-sum(cwd.mat.pos)/sum(cwd.mat.analyzed)
-bad.indx<-which(W$num== 0)
-
-cwd.mat.pos <- cwd.mat.pos[-c(bad.indx),]
-cwd.mat.analyzed <- cwd.mat.analyzed[-c(bad.indx),]
-wiStudyShp <- wiStudyShp[-c(bad.indx),]
-wsi.mat <- wsi.mat[-c(bad.indx),]
-W.nb <- poly2nb(wiStudyShp)
-W <- nb2WB(W.nb)
-wCarCM<-as.carCM(W$adj, W$weights, W$num)
-cwd.r<-sum(cwd.mat.pos)/sum(cwd.mat.analyzed)
-
-# remove
-wsMatMean <- wsMatMean[-c(361,362,358,301,275),]
-wsMatMax <- wsMatMax[-c(361,362,358,301,275),]
-wiStudyShp <- wiStudyShp[-c(361,362,358,301,275),]
-wsi.mat <- wsi.mat[-c(361,362,358,301,275),]
-cwd.mat.pos <- cwd.mat.pos[-c(361,362,358,301,275),]
-cwd.mat.analyzed <- cwd.mat.analyzed[-c(361,362,358,301,275),]
-W.nb <- poly2nb(wiStudyShp)
-W <- nb2WB(W.nb)
-wCarCM<-as.carCM(W$adj, W$weights, W$num)
-cwd.r<-sum(cwd.mat.pos)/sum(cwd.mat.analyzed)
-
-
-wsMatMean <- wsMatMean[-c(350,355),]
-wsMatMax <- wsMatMax[-c(350,355),]
-wiStudyShp <- wiStudyShp[-c(350,355),]
-cwd.mat.pos <- cwd.mat.pos[-c(350,355),]
-wsi.mat <- wsi.mat[-c(350,355),]
-cwd.mat.analyzed <- cwd.mat.analyzed[-c(350,355),]
-W.nb <- poly2nb(wiStudyShp)
-W <- nb2WB(W.nb)
-wCarCM<-as.carCM(W$adj, W$weights, W$num)
-cwd.r<-sum(cwd.mat.pos)/sum(cwd.mat.analyzed)
-
-# remove any townships with only zeros in reported numbers
 bad.indx <- c()
 k <- 1
 for(i in 1:nrow(cwd.mat.pos)){
@@ -1163,639 +600,425 @@ for(i in 1:nrow(cwd.mat.analyzed)){
     }}
 
 ```
+##### ANALYSIS
 
-```{r}
-# year samp will be the number of years we're getting CWD samples for
-yearSamp<-c(seq(2003,2022, 1))
-# let's create our expected value
+```{r explore data}
+wsi.mat.s <- matrix(0, nrow(wsiMat), ncol(wsiMat))
+for(i in 1:nrow(wsiMat)){
+  wsi.mat.s[i,] <- scale(wsiMat[i,])[,1]
+}
+wsi.mat.s<-wsi.mat.s[,-ncol(wsi.mat.s)]
+wsi.v <- as.vector(wsi.mat.s)
+pos.v.ar1 <- scale(as.vector(posMat[,-ncol(posMat)]))[,1]
+pos.v <- as.vector(posMat[,-1])
+samp.v <- scale(as.vector(sampMat[,-1]))[,1]
+z <- zeroinfl(pos.v~wsi.v + pos.v.ar1, offset=log(samp.v + 1), dist="poisson")
+zinfnbin <- zeroinfl(pos.v~+pos.v.ar1)
+jj<-data.frame(re = pos.v, wsi=wsi.v, pos.var1=pos.v.ar1)
+sampTrend.vv<-rep(sampTrend.v,nrow(sampMat))
+for(i in 2:ncol(sampMat)){
+  sampTrend[i] <- sum(sampMat[,i])
+}
+sampTrend<-sampTrend[-1]
+sampTrend.v<-scale(sampTrend)[,1]
+jj<-data.frame(re = pos.v, wsi=wsi.v, pos.var1=pos.v.ar1, sampTr=sampTrend.vv)
+sampTrend.v <- rep(scale(sampTrend)[,1], nrow(sampMat))
+m1poiss<-lm(re ~ wsi.v + pos.v.ar1 + sampTrend.v, data=jj, offset=log(samp.v+1))
+m1nbin<-lm(re ~ wsi.v + pos.v.ar1, data=jj, offset = log(samp.v+1))
 
-dZIP <- nimbleFunction(
- run = function(x = integer(), lambda = double(),
-                zeroProb = double(), log = logical(0, default = 0)) {
-   returnType(double())
-   ## First handle non-zero data
-   if (x != 0) {
-       ## return the log probability if log = TRUE
-       return(dpois(x, lambda, log = TRUE) + log(1 - zeroProb))
-       ## or the probability if log = FALSE
-      #else return((1 - zeroProb) * dpois(x, lambda, log = FALSE))
-   }
-   ## From here down we know x is 0
-   totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
-   return(log(totalProbZero))
-   #return(totalProbZero)
- })
+wsiMatScale <- scale(wsiMat)
+posMatScale <- scale(posMat)
+sampMatScale <- scale(sampMat)
+# create little dataframe to examine spatial autocorrelation
+cwdDat<-data.frame(obs=posMat[,2], resid = zeroinfl(posMat[,2]~posMatScale[,1]+wsiMatScale[,1]+log(sampMatScale[,1] + 1))$residuals)
+cwdDat$f <- (100 * cwdDat$obs)/(cwdDat$exp)
+for(i in 1:nrow(sampMat)){
+  if(sampMat[i,20] == 0 || posMat[i,20]==0){
+    cwdDat[i,]$prev20 <- 0
+  }else{
+  cwdDat[i,]$prev20 <- log(posMat[i,20])/log(sampMat[i,20] + 1)
+  }
+}
 
-registerDistributions(list(
-    dZIP = list(
-        BUGSdist = "dZIP(lambda, zeroProb)",
-        discrete = TRUE,
-        range = c(0, Inf),
-        types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
-     )))
+moran.out<-moran.test(cwdDat$resid, listw=W.listw)
+moran.plot(scale(cwdDat$prev1)[,1],listw=W.listw, xlab="Scaled CWD Prevalence", ylab="Neighbors Scaled Prevalence", main="Moran Scatterplot for Scaled CWD Prevalence in 2002")
+moran.plot(scale(cwdDat$prev10)[,1],listw=W.listw, xlab="standardized cwd prevalence", ylab="Neighbor's Scaled Prevalence", main="Moran Scatterplot for Scaled CWD Prevalence in 2012")
+moran.plot(scale(cwdDat$prev20)[,1],listw=W.listw, xlab="Scaled CWD Prevalence", ylab="Neighbor's Scaled Prevalence", main="Moran Scatterplot for Scaled CWD Prevalence in 2022")
 
-modelcode <- nimbleCode({
-  
-    ## priors
-    beta0 ~ dnorm(0.0, sd = prec.beta0)  # vague prior on intercept
-    gamma0 ~ dnorm(0.0, sd=prec.gamma0)   
-    beta1~ dnorm(0.0, sd = prec.gamma1)
-    gamma1~ dnorm(0.0, sd = prec.beta1)
-    theta.c ~ dnorm(0.0, sd=prec.theta.c)
-    theta.ci ~ dnorm(0.0, sd=prec.theta.ci)
-    # priors for precision of normal distributions
-    prec.beta0 ~ dgamma(0.1, 0.1)
-    prec.gamma0 ~ dgamma(0.1,0.1)
-    prec.gamma1 ~ dgamma(0.1,0.1)
-    prec.beta1 ~ dgamma(0.1,0.1)
-    prec.theta.c ~dgamma(0.1, 0.1)
-    prec.theta.ci ~dgamma(0.1,0.1)
-    mu0 ~ dnorm(0, 0.0001)
-    mu01 ~ dnorm(0,0.0001)
-    
-    prec.c ~ dgamma(0.0001, 0.0001)
-    prec.ci ~ dgamma(0.0001, 0.0001)
-    gmm0 ~ dunif(-1,1)
-    gmm1 ~ dunif(-1,1)
-    # prec.h ~ dgamma(0.1, 0.1)
-    # prec.hi ~ dgamma(0.1, 0.1)
-    ## calculate alpha
-    # sd.c <- sd(phi[1:N]) # marginal SD of heterogeneity effects
-    # sd.h <- sd(theta[1:N])   # marginal SD of clustering (spatial) effects
-    # sd.ci <- sd(psi[1:N]) # marginal SD of heteorgenity effects -- zero inflated process
-    # sd.hi <- sd(theta.i[1:N]) # marginal SD of clustering effects -- zero inflated process
-    # alpha <- sd.h / (sd.c + sd.h)
-    # alpha.i <- sd.hi/(sd.ci + sd.hi)
-    # spatial random effects
-    phi[1:N] ~ dcar_proper(m0[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.c,gmm0)
-    psi[1:N] ~ dcar_proper(m1[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.ci,gmm1)
-    # likelih
-  for (i in 1 : N) {
-    m0[i] <- mu01
-    m1[i] <- mu01
-    for(j in 2: n.years){
-        mu[i,j] <- s[i,j]*mu.hat + theta.c*cwd.p[i,j-1] + phi[i] + beta1*precip[i,j] + beta0
-        logit(p[i,j]) <- s[i,j]*mu.hat + theta.ci*cwd.p[i,j-1] + gamma1*precip[i,j] + psi[i] + gamma0
-        y[i,j] ~ dZIP(mu[i,j], p[i,j])
-    }
-        }
-     # CAR model for spatial random effects
-})
-## Specify data and initial values
-constants <- list(N = nrow(cwd.mat.analyzed),
-                  mu.hat=cwd.r,
-                  n.years=length(yearSamp),
-                  L = length(W$adj),
-                  adj=W$adj,
-                  weights=W$weights,
-                  num=W$num,
-                  M=wCarCM$M,
-                  C=wCarCM$C)
-data <- list(y = cwd.mat.pos,
-             s = cwd.mat.analyzed,
-             precip=wsi.mat,
-             cwd.p = cwd.mat.pos)
-inits <- list(beta1=0,
-              beta0=1,
-              theta.c = 0,
-              theta.ci = 0,
-              gamma1=0,
-              gamma0=1,
-              prec.beta0 = 1,
-              prec.gamma0 = 1,
-              prec.gamma1 = 1,
-              prec.beta1 = 1,
-              prec.theta.c = 1,
-              prec.theta.ci = 1,
-              prec.c = 1,
-              prec.ci = 1,
-              gmm0 = 0,
-              gmm1 = 0,
-              phi = rep(0, nrow(cwd.mat.pos)),
-              psi = rep(0, nrow(cwd.mat.pos)),
-              m0=rep(0,nrow(cwd.mat.pos)),
-              m1=rep(0,nrow(cwd.mat.pos)),
-              mu=matrix(0,nrow=nrow(cwd.mat.pos),ncol=ncol(cwd.mat.pos)),
-              p = matrix(0, nrow=nrow(cwd.mat.pos), ncol=ncol(cwd.mat.pos)),
-              mu0 = 0,
-              mu01 = 0)
+#now we can look to see how to account for temporal autocorrelation
+temp.trend <- rep(0,ncol(posMat))
+tempdf<-data.frame(prev=temp.trend,year=0)
+for(j in 1:ncol(posMat)){
+ tempdf[j,]$prev <- sum(posMat[,j])/sum(sampMat[,j])
+ tempdf[j,]$year <- j
+}
+
+sampYears <- c(2002:2022)
+twnshps <- unique(sampDatFemale$twnshp)
+sampYearTwnshp <- expand.grid(sampYears, twnshps)
+cwdDat <- data.frame(year = sampYearTwnshp$Var1, uid = sampYearTwnshp$Var2)
 
 
-## Build/Compile model, including steps:
-## (1) build model (2) compile model in C++
-## (3) specify MCMC parameters to collect and create MCMC algorithm
-cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
-c.cwdspatmodel <- compileNimble(cwdspatmodel, resetFunctions = TRUE)
 
-confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0', 'beta1',
-                                                   'gamma1','gamma0'
-                                                  ),
-                        enableWAIC = TRUE)
-cwdspatmcmc <- buildMCMC(confMC)
-c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel, resetFunctions = TRUE)## Run MCMC
+templm<-lm(prev~year,data=tempdf)
+plot(templm)
+templm
+plot(m1poiss)
+summary(m1poiss)
+plot(sampTrend, type="l", ylab="Number of Deer Sampled", xlab="year", main="Number of Deer Sampled Per Year (2002-2022)")
+#
 
-# theta <- rep(0, nrow(cwd.mat.pos))
-# theta.i <- rep(0, nrow(cwd.mat.pos))
-mcmc.out <- runMCMC(c.cwdspatmcmc,
-                    niter=20000,
-                    nburnin=5000,
-                    thin = 2,
-                    nchains=5,
-                    WAIC=TRUE)
-## convert post samples as mcmc.list object and diagnose convergence using coda functions
-post.samples <- mcmc.list(sapply(mcmc.out$samples,
-                                 as.mcmc,simplify=FALSE))
-pars <- c("beta0",'gamma0', 'beta1', 'gamma1', 'theta.c', 'theta.ci')
-plot(post.samples, trace=TRUE, density=FALSE)
-gelman.plot(post.samples)
-autocorr.plot(post.samples)
-## posterior summary
-summary(post.samples)
-## model assessment using WAIC value
-mcmc.out$WAIC
+plot(m1poiss)
+plot(m1nbin)
+
+summary(m1nbin)
+plot(m1poiss)
+
+# fit nb
+nsims=1000
+nb<-MASS::glm.nb(re ~ wsi + pos.var1+sampTr + offset(log(samp.v+1)),data=jj,link=log)
+nobs<-nrow(jj)
+zeros.nsim<-matrix(NA, nsims,1)
+beta.hat <- MASS::mvrnorm(nsims, coef(nb), vcov(nb))
+theta.hat <- rnorm(nsims, nb$theta, nb$SE.theta)
+xmat <- model.matrix(nb)
+for(i in 1:nsims){
+  mus<-exp(xmat%*%beta.hat[i,])
+  new.y<-rnbinom(nobs, mu=mus, size=theta.hat[i])
+  zeros.nsim[i]<-sum(new.y==0)
+}
+names(sampDatFemale)[2:ncol(sampDatFemale)] <- c(2002:2022)
+names(posDatMale)[2:ncol(sampDatFemale)] <- c(2002:2022)
+names(posDatFemale)[2:ncol(sampDatFemale)] <- c(2002:2022)
+names(sampDatMale)[2:ncol(sampDatFemale)] <- c(2002:2022)
+
+
+# plot WSI countywide
+wsiMast <- wsiMast %>% filter(name %in% unique(WIDat$County))
+wsiMast <- wsiMast[,-c(1:4)]
+wsiMast <- wsiMast[,-c(ncol(wsiMast))]
+matplot(t(wsiMast), type="l", main="Winter Severity Index (WSI) from WSI From WIDot", xlab="Year", ylab="WSI")
+wiTwnshpShpWSI <- inter
+matplot(t(wsiMat), type="l", main="Calculated Winter Severity Index (WSI) from Prism Data Winter", xlab="Year", ylab="WSI")
+
+wiCountyShp<-st_transform(wiCountyShp, st_crs(wiTwnshpShpWSI)) # project to same CRS
+# get the uid field I use to get unique townshps
+wiTwnshpShp <- wiTwnshpShp %>% mutate(uid = paste0(TWP, "-", RNG, "-", DIR_ALPHA))
+# get the intersection
+wiCountyTwnshps <- st_intersection(wiCountyShp, wiTwnshpShpWSI)
+wiCountyTwnshps <- wiCountyTwnshps %>% filter(!duplicated(wiCountyTwnshps$uid))
+wiCountyShps <- wiCountyTwnshps %>% group_by(COUNTY_NAM) %>% mutate(cV1 = mean(V1), cV2 = mean(V2), cV3 = mean(V3), cV4 = mean(V4), cV5 = mean(V5), cV6 = mean(V6), cV7 = mean(V7), cV8 = mean(V8), cV9 = mean(V9), cV10 = mean(V10), cV11 = mean(V11), cV12 = mean(V12), cV13 = mean(V13), cV14 = mean(V14), cV15 = mean(V15), cV16 = mean(V16), cV17 = mean(V17), cV18 = mean(V18), cV19 = mean(V19), cV20 = mean(V20))
+wiCountyShps <- wiCountyShps %>% select(COUNTY_FIP,cV1, cV2, cV3, cV4, cV5, cV6, cV7, cV8, cV9, cV10, cV11, cV12, cV13, cV14, cV15, cV16, cV17, cV18, cV19,cV20) # get rid of duplicates
+wiCountyShps <- wiCountyShps %>% filter(!duplicated(COUNTY_FIP))
+wsiMatCountyAvg <- cbind(
+  wiCountyShps$cV1,
+  wiCountyShps$cV2,
+  wiCountyShps$cV3,
+  wiCountyShps$cV4,
+  wiCountyShps$cV5,
+  wiCountyShps$cV5,
+  wiCountyShps$cV6,
+  wiCountyShps$cV7,
+  wiCountyShps$cV8,
+  wiCountyShps$cV9,
+  wiCountyShps$cV10,
+  wiCountyShps$cV11,
+  wiCountyShps$cV12,
+  wiCountyShps$cV13,
+  wiCountyShps$cV14,
+  wiCountyShps$cV13,
+  wiCountyShps$cV15,
+  wiCountyShps$cV16,
+  wiCountyShps$cV17,
+  wiCountyShps$cV18,
+  wiCountyShps$cV19,
+  wiCountyShps$cV20
+)
+
+matplot(t(wsiMatCountyAvg), type="l")
+matplot(t(wsiMast), type="l")
+plot(nb)
+```
+
+```{r echo=FALSE, INLA}
+wiTwnshpShp$uid <- paste0(wiTwnshpShp$TWP, "-", wiTwnshpShp$RNG, "-", wiTwnshpShp$DIR_ALPHA)
+WIDatClean5 <- WIDatClean5 %>% filter(uid %in% hsiDat$uid)
+WIDatClean5 <- WIDatClean5 %>% arrange(year, uid)
+
+wiTwnshpStudy <- wiTwnshpShp %>%  filter(uid %in% WIDatClean5$uid) %>% arrange(uid)
+
+
+
+# check for island
+wiTwnshpPoly <- as(wiTwnshpStudy, "Spatial")
+W.nb <- poly2nb(wiTwnshpPoly)
+W <- nb2WB(W.nb) 
+island.uid <- wiTwnshpStudy[which(W$num==0),]$uid
+wiTwnshpStudy <- wiTwnshpStudy %>% filter(!(uid %in% island.uid))
+
+WIDatClean5 <-WIDatClean5 %>% filter(!(uid %in% island.uid))
+
+# arrange everything again to be sure
+WIDatClean5 <- WIDatClean5 %>% arrange(year, uid)
+wiTwnshpStudy <- wiTwnshpShp %>% arrange(uid)
+wiStudyShp <- wiTwnshpShp %>% filter(uid %in% WIDatClean5$uid)
+wiStudyShp <- wiStudyShp %>% arrange(uid)
+# join with HSI Dat
+WIDatClean5 <- merge(WIDatClean5, hsiDat, on.x="uid", on.y="uid", all.x=TRUE)
+
+
+
+WIDatClean5$pos.prev.0 <- if_else(WIDatClean5$pos.prev==0,0,1)
+WIDatClean5$pos.prev.nz <- if_else(WIDatClean5$pos.prev>0,WIDatClean5$pos.prev,NA)
+
+
+# create identifiers for year; uid for inla
+WIDatClean5$idarea <- as.numeric(as.factor(WIDatClean5$uid))
+WIDatClean5$idarea2 <- WIDatClean5$idarea
+WIDatClean5$idtime <- 1 + as.numeric(WIDatClean5$year) - min(as.numeric(WIDatClean5$year))
+WIDatClean5$idtime2 <- WIDatClean5$idtime
+
+
+# create the design matrices
+x.0 <- data.frame(uid.0 = WIDatClean5$uid,
+                  year.0 = WIDatClean5$year,
+                  idtime0 = WIDatClean5$idtime,
+                  idtime2.0 = WIDatClean5$idtime,
+                  idarea.0 = WIDatClean5$idarea,
+                  idarea2.0 = WIDatClean5$idarea,
+                  wsi.0 = WIDatClean5$wsi.sc,
+                  pos.prev.t.minus.1.sc.0=WIDatClean5$pos.prev.t.minus.1.sc,
+                  MA.prev.t.samp.sc.0 = WIDatClean5$MA.prev.t.samp.sc,
+                  MY.prev.t.samp.sc.0 = WIDatClean5$MY.prev.t.samp.sc,
+                  MJ.prev.t.samp.sc.0 = WIDatClean5$MJ.prev.t.samp.sc,
+                  FA.prev.t.samp.sc.0 = WIDatClean5$FA.prev.t.samp.sc,
+                  FY.prev.t.samp.sc.0 = WIDatClean5$FY.prev.t.samp.sc,
+                  FJ.prev.t.samp.sc.0 = WIDatClean5$FJ.prev.t.samp.sc,
+                  MA.prev.sc.0 = WIDatClean5$MA.prev.sc,
+                  MY.prev.sc.0 = WIDatClean5$MY.prev.sc,
+                  MJ.prev.sc.0 = WIDatClean5$MJ.prev.sc,
+                  FA.prev.sc.0 = WIDatClean5$FA.prev.sc,
+                  FY.prev.sc.0 = WIDatClean5$FY.prev.sc,
+                  FJ.prev.sc.0 = WIDatClean5$FJ.prev.sc,
+                  x.0 = WIDatClean5$x.sc,
+                  y.0 = WIDatClean5$y.sc,
+                  cv.0 = WIDatClean5$cv,
+                  nSamp.0 = scale(WIDatClean5$nSamp)[,1],
+                  fd.0 = WIDatClean5$fd
+)
+
+x.nz <- data.frame(uid.nz = WIDatClean5$uid,
+                   year.nz = WIDatClean5$year,
+                   idtime.nz = WIDatClean5$idtime,
+                   idtime2.nz = WIDatClean5$idtime,
+                   wsi.nz = WIDatClean5$wsi.sc,
+                   idarea.nz = WIDatClean5$idarea,
+                   idarea2.nz = WIDatClean5$idarea,
+                   pos.prev.t.minus.1.sc.nz=WIDatClean5$pos.prev.t.minus.1.sc,
+                   MA.prev.t.samp.sc.nz = WIDatClean5$MA.prev.t.samp.sc,
+                   MY.prev.t.samp.sc.nz = WIDatClean5$MY.prev.t.samp.sc,
+                   MJ.prev.t.samp.sc.nz = WIDatClean5$MJ.prev.t.samp.sc,
+                   FA.prev.t.samp.sc.nz = WIDatClean5$FA.prev.t.samp.sc,
+                   FY.prev.t.samp.sc.nz = WIDatClean5$FY.prev.t.samp.sc,
+                   FJ.prev.t.samp.sc.nz = WIDatClean5$FJ.prev.t.samp.sc,
+                   MA.prev.sc.nz = WIDatClean5$MA.prev.sc,
+                   MY.prev.sc.nz = WIDatClean5$MY.prev.sc,
+                   MJ.prev.sc.nz = WIDatClean5$MJ.prev.sc,
+                   FA.prev.sc.nz = WIDatClean5$FA.prev.sc,
+                   FY.prev.sc.nz = WIDatClean5$FY.prev.sc,
+                   FJ.prev.sc.nz = WIDatClean5$FJ.prev.sc,
+                   x.nz = WIDatClean5$x.sc,
+                   y.nz = WIDatClean5$y.sc,
+                   cv.nz = WIDatClean5$cv,
+                   fd.nz = WIDatClean5$fd
+)
+cwdDat.wide <- reshape(WIDatClean5, timevar="year", idvar=c("uid"), direction="wide")
+wiTwnshpPoly <- as(wiStudyShp, "Spatial")
+map <- merge(wiTwnshpPoly, cwdDat.wide, by.x = "uid", by.y = "uid")
+nb <- poly2nb(map) # create nb object
+nb2INLA("map.adj", nb)
+g <- inla.read.graph(filename = "map.adj")
+# table for combined zero and count process
+#./data/FinalTable-RETREAT-not-zero-split
+# make INLA stacks
+stack.nz <- inla.stack(
+  tag="fit.nz",
+  data=list(all.prev=cbind(WIDatClean5$pos.prev.nz,NA)),
+  A = list(1),
+  effects = list(
+    x.nz = as.data.frame(x.nz)
+  )
+)
+stack.0 <- inla.stack(
+  tag="fit.0",
+  data=list(all.prev=cbind(NA,WIDatClean5$pos.prev.0)),
+  A = list(1),
+  effects = list(
+    x.nz = as.data.frame(x.0)
+  )
+)
+# specify formula
+stack.t <- inla.stack(stack.nz, stack.0)
+f.hurdle <- pos.prev.nz ~ idtime + wsi.sc + f(pos.prev.t.minus.1.sc, model = "ar1") + x.sc + y.sc + fd + cv + f(idarea, model = "besag", graph = g, scale.model = TRUE) 
+
+f.hurdle.0 <- pos.prev.0 ~ idtime + wsi.sc + f(pos.prev.t.minus.1.sc, model = "ar1") + f(idarea, model = "besag", graph = g, scale.model = TRUE) + x.sc + y.sc + fd + cv
+
+# next step might be to check out differences in cv based on neighborhood
+
+# separate model
+
+prior.list <- list(pc.prec = list(prec = list(prior = "pc.prec", param = c(1, 0.5)))# prior for 
+                   )
+
+
+f.hurdle.pc <- all.prev ~  idtime.nz + wsi.nz + MA.prev.t.samp.sc.nz + MY.prev.t.samp.sc.nz + wsi.nz:FY.prev.sc.nz + f(idtime2.nz, model="iid") + f(idarea2.nz, model="iid", graph=g, hyper=prior.list$pc.prec) + f(pos.prev.t.minus.1.sc.nz, model = "ar1") + cv.nz + fd.nz + f(idarea.nz, model = "besag", graph = g, hyper=prior.list$pc.prec)  + f(idtime2.0, model="iid") + idtime0 + wsi.0 + MA.prev.t.samp.sc.0 + MY.prev.t.samp.sc.0 + f(pos.prev.t.minus.1.sc.0, model = "ar1") + f(idarea.0, model = "besag", graph = g, hyper=prior.list$pc.prec, scale.model=TRUE) + x.0 + y.0 + cv.0 + fd.0 + f(idarea2.0, model="iid", graph=g, hyper=prior.list$pc.prec) + nSamp.0
+
+hurdle.out.pc<-inla(f.hurdle, family=c("nbinomial"), data=WIDatClean5, control.compute=list(dic=TRUE,waic=TRUE),
+     control.predictor=list(link=1))
+
+# call for joint
+# 
+# hurdle.out.pc<-inla(f.hurdle.pc, family=c("nbinomial", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE),
+#      control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+
+#write.table(cwdDat5, "./cwdDatFinal") # write this to file
+
+# to look at the marginals of posterior
+# plot(inla.smarginal(hurdle.out.pc$marginals.hyperpar$`Rho for pos.prev.t.minus.1.sc.nz`), type="l")
+
+
+# try fitting with long-format data
+
+# WITimeSeries4 <- WITimeSeries4[,-c(5)]
+WITimeSeries4 <- WITimeSeries4 %>% filter(uid %in% WIDatClean5$uid)
+WITimeSeries4 <- WITimeSeries4 %>% arrange(year, uid, group)
+WITimeSeries4$idarea <- as.numeric(as.factor(WITimeSeries4$uid))
+WITimeSeries4$idarea2 <- WITimeSeries4$idarea
+WITimeSeries4$idtime <- 1 + as.numeric(WITimeSeries4$year) - min(as.numeric(WITimeSeries4$year))
+WITimeSeries4$idtime2 <- WITimeSeries4$idtime
+WITimeSeries4$idgroup <- as.numeric(as.factor(WITimeSeries4$group))
+
+x.0.2 <- data.frame(uid.0 = WITimeSeries4$uid,
+                  year.0 = WITimeSeries4$year,
+                  idtime0 = WITimeSeries4$idtime,
+                  idtime2.0 = WITimeSeries4$idtime,
+                  idarea.0 = WITimeSeries4$idarea,
+                  idarea2.0 = WITimeSeries4$idarea,
+                  idgroup.0 = WITimeSeries4$idgroup,
+                  wsi.0 = WITimeSeries4$wsi.sc,
+                  pos.prev.t.minus.1.sc.0=WITimeSeries4$pos.prev.t.minus.1.sc,
+                  x.0 = WITimeSeries4$x.sc,
+                  y.0 = WITimeSeries4$y.sc,
+                  group.0 = WITimeSeries4$group,
+                  nSamp.0 = scale(WITimeSeries4$nSamp)[,1]
+)
+
+x.nz.2 <- data.frame(uid.nz = WITimeSeries4$uid,
+                   year.nz = WITimeSeries4$year,
+                   idtime.nz = WITimeSeries4$idtime,
+                   idtime2.nz = WITimeSeries4$idtime,
+                   wsi.nz = WITimeSeries4$wsi.sc,
+                   idarea.nz = WITimeSeries4$idarea,
+                   idarea2.nz = WITimeSeries4$idarea,
+                   idgroup.nz = WITimeSeries4$idgroup,
+                   group.nz = WITimeSeries4$group,
+                   pos.prev.t.minus.1.sc.nz=WITimeSeries4$pos.prev.t.minus.1.sc,
+                   x.nz = WITimeSeries4$x.sc,
+                   y.nz = WITimeSeries4$y.sc
+)
+
+WITimeSeries4$pos.prev.0 <- if_else(WITimeSeries4$pos.prev==0,0,1)
+WITimeSeries4$pos.prev.nz <- if_else(WITimeSeries4$pos.prev>0,WITimeSeries4$pos.prev,NA)
+
+stack.nz.2 <- inla.stack(
+  tag="fit.nz",
+  data=list(all.prev=cbind(WITimeSeries4$pos.prev.nz,NA)),
+  A = list(1),
+  effects = list(
+    x.nz = as.data.frame(x.nz.2)
+  )
+)
+stack.0.2 <- inla.stack(
+  tag="fit.0",
+  data=list(all.prev=cbind(NA,WITimeSeries4$pos.prev.0)),
+  A = list(1),
+  effects = list(
+    x.nz = as.data.frame(x.0.2)
+  )
+)
+
+cwdDat.wide <- reshape(WITimeSeries4, timevar="year", idvar=c("uid", "idgroup"), direction="wide")
+wiTwnshpPoly <- as(wiStudyShp, "Spatial")
+map <- merge(wiTwnshpPoly, cwdDat.wide, by.x = "uid", duplicateGeoms=TRUE)
+nb <- poly2nb(map) # create nb object
+nb2INLA("map.adj", nb)
+g <- inla.read.graph(filename = "map.adj")
+
+prior.list <- list(pc.prec = list(prec = list(prior = "pc.prec", param = c(1, 0.5)))# prior for 
+                   )
+stack.t <- inla.stack(stack.nz.2, stack.0.2)
+
+f.hurdle.pc.3 <- pos.prev.nz ~ idtime + group:wsi.sc + f(idarea2, model="iid", graph=g, hyper=prior.list$pc.prec) + f(pos.prev.t.minus.1.sc, model = "ar1") + f(idarea, model = "besag", graph = g, hyper=prior.list$pc.prec) + x.sc + y.sc - 1 - group
+
+f.hurdle.pc.3 <- pos.prev.nz ~ idtime + wsi.sc + f(idarea2, model="iid", graph=g, hyper=prior.list$pc.prec) + f(pos.prev.t.minus.1.sc, model = "ar1") + f(idarea, model = "besag", graph = g, hyper=prior.list$pc.prec) + x.sc + y.sc
+
+
+f.hurdle.pc.4 <- f(pos.prev.t.minus.1.sc.0, model = "ar1") + f(idarea.0, model = "besag", graph = g, hyper=prior.list$pc.prec, scale.model=TRUE) + x.0 + y.0 + f(idarea2.0, model="iid", graph=g, hyper=prior.list$pc.prec) + nSamp.0 + group.0 + group.0:wsi.0 + f(idtime2.0, model="iid") + idtime0 + wsi.0
+
+
+hurdle.out.pc.4<-inla(f.hurdle.pc.3,
+                      data=WITimeSeries4,
+                      family=c("nbinomial"),
+                      control.compute=list(dic=TRUE,waic=TRUE),
+                      control.predictor=list(link=1))
+
+
 
 ```
 
-```{r, 2 years of wsi effect}
-# year samp will be the number of years we're getting CWD samples for
-yearSamp<-c(seq(2003,2022, 1))
-# let's create our expected value
-
-dZIP <- nimbleFunction(
- run = function(x = integer(), lambda = double(),
-                zeroProb = double(), log = logical(0, default = 0)) {
-   returnType(double())
-   ## First handle non-zero data
-   if (x != 0) {
-       ## return the log probability if log = TRUE
-       return(dpois(x, lambda, log = TRUE) + log(1 - zeroProb))
-       ## or the probability if log = FALSE
-      #else return((1 - zeroProb) * dpois(x, lambda, log = FALSE))
-   }
-   ## From here down we know x is 0
-   totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
-   return(log(totalProbZero))
-   #return(totalProbZero)
- })
-
-registerDistributions(list(
-    dZIP = list(
-        BUGSdist = "dZIP(lambda, zeroProb)",
-        discrete = TRUE,
-        range = c(0, Inf),
-        types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
-     )))
-
-modelcode <- nimbleCode({
-  
-    ## priors
-    beta0 ~ dnorm(0.0, sd = prec.beta0)  # vague prior on intercept
-    gamma0 ~ dnorm(0.0, sd=prec.gamma0)   
-    beta1~ dnorm(0.0, sd = prec.gamma1)
-    gamma1~ dnorm(0.0, sd = prec.beta1)
-    theta.c ~ dnorm(0.0, sd=prec.theta.c)
-    theta.ci ~ dnorm(0.0, sd=prec.theta.ci)
-    beta1hat ~ dnorm(0.0, sd=prec.beta1hat)
-    gamma1hat ~ dnorm(0.0, sd=prec.gamma1hat)
-    # priors for precision of normal distributions
-    prec.beta0 ~ dgamma(0.1, 0.1)
-    prec.gamma0 ~ dgamma(0.1,0.1)
-    prec.gamma1 ~ dgamma(0.1,0.1)
-    prec.beta1 ~ dgamma(0.1,0.1)
-    prec.beta1hat ~dgamma(0.1,0.1)
-    prec.gamma1hat~dgamma(0.1,0.1)
-    prec.theta.c ~dgamma(0.1, 0.1)
-    prec.theta.ci ~dgamma(0.1,0.1)
-    mu0 ~ dnorm(0, 0.0001)
-    mu01 ~ dnorm(0,0.0001)
-    
-    prec.c ~ dgamma(0.0001, 0.0001)
-    prec.ci ~ dgamma(0.0001, 0.0001)
-    gmm0 ~ dunif(-1,1)
-    gmm1 ~ dunif(-1,1)
-    # prec.h ~ dgamma(0.1, 0.1)
-    # prec.hi ~ dgamma(0.1, 0.1)
-    ## calculate alpha
-    # sd.c <- sd(phi[1:N]) # marginal SD of heterogeneity effects
-    # sd.h <- sd(theta[1:N])   # marginal SD of clustering (spatial) effects
-    # sd.ci <- sd(psi[1:N]) # marginal SD of heteorgenity effects -- zero inflated process
-    # sd.hi <- sd(theta.i[1:N]) # marginal SD of clustering effects -- zero inflated process
-    # alpha <- sd.h / (sd.c + sd.h)
-    # alpha.i <- sd.hi/(sd.ci + sd.hi)
-    # spatial random effects
-    phi[1:N] ~ dcar_proper(m0[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.c,gmm0)
-    psi[1:N] ~ dcar_proper(m1[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.ci,gmm1)
-    # likelih
-  for (i in 1 : N) {
-    m0[i] <- mu01
-    m1[i] <- mu01
-    for(j in 2: n.years){
-        mu[i,j] <- s[i,j]*mu.hat + theta.c*cwd.p[i,j-1] + phi[i] + beta1*precip[i,j]  + beta1hat*precip[i,j-1]+ beta0
-        logit(p[i,j]) <- s[i,j]*mu.hat + theta.ci*cwd.p[i,j-1] + gamma1*precip[i,j] + gamma1hat*precip[i,j-1]+ psi[i] + gamma0
-        y[i,j] ~ dZIP(mu[i,j], p[i,j])
-    }
-        }
-     # CAR model for spatial random effects
-})
-## Specify data and initial values
-constants <- list(N = nrow(cwd.mat.analyzed),
-                  mu.hat=cwd.r,
-                  n.years=length(yearSamp),
-                  L = length(W$adj),
-                  adj=W$adj,
-                  weights=W$weights,
-                  num=W$num,
-                  M=wCarCM$M,
-                  C=wCarCM$C)
-data <- list(y = cwd.mat.pos,
-             s = cwd.mat.analyzed,
-             precip=wsi.mat,
-             cwd.p = cwd.mat.pos)
-inits <- list(beta1=0,
-              beta0=1,
-              theta.c = 0,
-              theta.ci = 0,
-              gamma1=0,
-              gamma0=1,
-              gamma1hat = 0,
-              beta1hat = 0,
-              prec.beta0 = 1,
-              prec.gamma0 = 1,
-              prec.gamma1 = 1,
-              prec.beta1 = 1,
-              prec.theta.c = 1,
-              prec.theta.ci = 1,
-              prec.beta1hat = 1,
-              prec.gamma1hat = 1,
-              prec.c = 1,
-              prec.ci = 1,
-              gmm0 = 0,
-              gmm1 = 0,
-              phi = rep(0, nrow(cwd.mat.pos)),
-              psi = rep(0, nrow(cwd.mat.pos)),
-              m0=rep(0,nrow(cwd.mat.pos)),
-              m1=rep(0,nrow(cwd.mat.pos)),
-              mu=matrix(0,nrow=nrow(cwd.mat.pos),ncol=ncol(cwd.mat.pos)),
-              p = matrix(0, nrow=nrow(cwd.mat.pos), ncol=ncol(cwd.mat.pos)),
-              mu0 = 0,
-              mu01 = 0)
+```{r INLA model validation}
+# hurdle model
+hurdle.out <- mix.out
 
 
-## Build/Compile model, including steps:
-## (1) build model (2) compile model in C++
-## (3) specify MCMC parameters to collect and create MCMC algorithm
-cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
-c.cwdspatmodel <- compileNimble(cwdspatmodel, resetFunctions = TRUE)
+nobs.fitted.3<-hurdle.out.pc$summary.fitted.values[,"mean"]
 
-confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0', 'beta1',
-                                                   'gamma1','gamma0',
-                                                   'beta1hat', 'gamma1hat'
-                                                  ),
-                        enableWAIC = TRUE)
-cwdspatmcmc <- buildMCMC(confMC)
-c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel, resetFunctions = TRUE)## Run MCMC
+# calculate pearson residuals for model
+p.resid.3 <- (WIDatClean5$pos.prev.nz - nobs.fitted.3)
 
-# theta <- rep(0, nrow(cwd.mat.pos))
-# theta.i <- rep(0, nrow(cwd.mat.pos))
-mcmc.out <- runMCMC(c.cwdspatmcmc,
-                    niter=20000,
-                    nburnin=5000,
-                    thin = 2,
-                    nchains=5,
-                    WAIC=TRUE)
-## convert post samples as mcmc.list object and diagnose convergence using coda functions
-post.samples <- mcmc.list(sapply(mcmc.out$samples,
-                                 as.mcmc,simplify=FALSE))
-pars <- c("beta0",'gamma0', 'beta1', 'gamma1', 'theta.c', 'theta.ci')
-plot(post.samples, trace=TRUE, density=FALSE)
-gelman.plot(post.samples)
-autocorr.plot(post.samples)
-## posterior summary
-summary(post.samples)
-## model assessment using WAIC value
-mcmc.out$WAIC
+# want to know how it works for the count process
+# grab the indices that have zero components
+hurdle.res.dat <- data.frame(pearson=p.resid,
+                             fitted=hurdle.out.pc$summary.fitted.values[,'mean'],
+                             obs=WIDatClean5$pos.prev)
+hurdle.res.dat2 <- data.frame(pearson=p.resid.3,
+                             fitted=hurdle.out.pc.3$summary.fitted.values[,'mean'],
+                             obs=WIDatClean5$pos.prev)
+ggplot(hurdle.res.dat, aes(x=obs, y=fitted)) + 
+  geom_point()
 
+groups <- c("FA", "FY", "FJ",
+            "MA", "MY", "MJ")
+
+hurdle.out.dat <- data.frame(groups=groups, mean=0, LCI=0, UCI=0)
+for(i in 1:length(groups)){
+  hurdle.out.dat[i,]$mean = hurdle.out.pc.4$summary.fixed[paste0("group", groups[i], ":wsi.sc"),]$mean
+  hurdle.out.dat[i,]$LCI = hurdle.out.pc.4$summary.fixed[paste0("group", groups[i], ":wsi.sc"),]$"0.025quant"
+  hurdle.out.dat[i,]$UCI = hurdle.out.pc.4$summary.fixed[paste0("group", groups[i], ":wsi.sc"),]$"0.975quant"
+}
+
+
+plot(x=log(WIDatClean5$pos.prev.nz),y=log(nobs.fitted.3)) 
+plot(nobs.fitted.3,residuals(hurdle.out.pc,type="pearson"))
+ggplot(hurdle.out.dat)
+ggplot(data = hurdle.out.dat, aes(x=groups)) +
+  geom_point(aes(y=mean)) + 
+  geom_errorbar(aes(ymin = LCI, ymax = UCI)) +
+    theme_bw()
+DHARMa::testResiduals(residuals(hurdle.out.pc,type="pearson"))
 ```
 
-```{r, 2 years of wsi effect late season wsi}
-# year samp will be the number of years we're getting CWD samples for
-yearSamp<-c(seq(2003,2022, 1))
-# let's create our expected value
 
-dZIP <- nimbleFunction(
- run = function(x = integer(), lambda = double(),
-                zeroProb = double(), log = logical(0, default = 0)) {
-   returnType(double())
-   ## First handle non-zero data
-   if (x != 0) {
-       ## return the log probability if log = TRUE
-       return(dpois(x, lambda, log = TRUE) + log(1 - zeroProb))
-       ## or the probability if log = FALSE
-      #else return((1 - zeroProb) * dpois(x, lambda, log = FALSE))
-   }
-   ## From here down we know x is 0
-   totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
-   return(log(totalProbZero))
-   #return(totalProbZero)
- })
-
-registerDistributions(list(
-    dZIP = list(
-        BUGSdist = "dZIP(lambda, zeroProb)",
-        discrete = TRUE,
-        range = c(0, Inf),
-        types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
-     )))
-
-modelcode <- nimbleCode({
-  
-    ## priors
-    beta0 ~ dnorm(0.0, sd = prec.beta0)  # vague prior on intercept
-    gamma0 ~ dnorm(0.0, sd=prec.gamma0)   
-    beta1~ dnorm(0.0, sd = prec.gamma1)
-    gamma1~ dnorm(0.0, sd = prec.beta1)
-    theta.c ~ dnorm(0.0, sd=prec.theta.c)
-    theta.ci ~ dnorm(0.0, sd=prec.theta.ci)
-    beta1hat ~ dnorm(0.0, sd=prec.beta1hat)
-    gamma1hat ~ dnorm(0.0, sd=prec.gamma1hat)
-    # priors for precision of normal distributions
-    prec.beta0 ~ dgamma(0.1, 0.1)
-    prec.gamma0 ~ dgamma(0.1,0.1)
-    prec.gamma1 ~ dgamma(0.1,0.1)
-    prec.beta1 ~ dgamma(0.1,0.1)
-    prec.beta1hat ~dgamma(0.1,0.1)
-    prec.gamma1hat~dgamma(0.1,0.1)
-    prec.theta.c ~dgamma(0.1, 0.1)
-    prec.theta.ci ~dgamma(0.1,0.1)
-    mu0 ~ dnorm(0, 0.0001)
-    mu01 ~ dnorm(0,0.0001)
-    
-    prec.c ~ dgamma(0.0001, 0.0001)
-    prec.ci ~ dgamma(0.0001, 0.0001)
-    gmm0 ~ dunif(-1,1)
-    gmm1 ~ dunif(-1,1)
-    # prec.h ~ dgamma(0.1, 0.1)
-    # prec.hi ~ dgamma(0.1, 0.1)
-    ## calculate alpha
-    # sd.c <- sd(phi[1:N]) # marginal SD of heterogeneity effects
-    # sd.h <- sd(theta[1:N])   # marginal SD of clustering (spatial) effects
-    # sd.ci <- sd(psi[1:N]) # marginal SD of heteorgenity effects -- zero inflated process
-    # sd.hi <- sd(theta.i[1:N]) # marginal SD of clustering effects -- zero inflated process
-    # alpha <- sd.h / (sd.c + sd.h)
-    # alpha.i <- sd.hi/(sd.ci + sd.hi)
-    # spatial random effects
-    phi[1:N] ~ dcar_proper(m0[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.c,gmm0)
-    psi[1:N] ~ dcar_proper(m1[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.ci,gmm1)
-    # likelih
-  for (i in 1 : N) {
-    m0[i] <- mu01
-    m1[i] <- mu01
-    for(j in 2: n.years){
-        mu[i,j] <- s[i,j]*mu.hat + theta.c*cwd.p[i,j-1] + phi[i] + beta1*precip[i,j]  + beta1hat*precip[i,j-1]+ beta0
-        logit(p[i,j]) <- s[i,j]*mu.hat + theta.ci*cwd.p[i,j-1] + gamma1*precip[i,j] + gamma1hat*precip[i,j-1]+ psi[i] + gamma0
-        y[i,j] ~ dZIP(mu[i,j], p[i,j])
-    }
-        }
-     # CAR model for spatial random effects
-})
-## Specify data and initial values
-constants <- list(N = nrow(cwd.mat.analyzed),
-                  mu.hat=cwd.r,
-                  n.years=length(yearSamp),
-                  L = length(W$adj),
-                  adj=W$adj,
-                  weights=W$weights,
-                  num=W$num,
-                  M=wCarCM$M,
-                  C=wCarCM$C)
-data <- list(y = cwd.mat.pos,
-             s = cwd.mat.analyzed,
-             precip=wsi.mat,
-             cwd.p = cwd.mat.pos)
-inits <- list(beta1=0,
-              beta0=1,
-              theta.c = 0,
-              theta.ci = 0,
-              gamma1=0,
-              gamma0=1,
-              gamma1hat = 0,
-              beta1hat = 0,
-              prec.beta0 = 1,
-              prec.gamma0 = 1,
-              prec.gamma1 = 1,
-              prec.beta1 = 1,
-              prec.theta.c = 1,
-              prec.theta.ci = 1,
-              prec.beta1hat = 1,
-              prec.gamma1hat = 1,
-              prec.c = 1,
-              prec.ci = 1,
-              gmm0 = 0,
-              gmm1 = 0,
-              phi = rep(0, nrow(cwd.mat.pos)),
-              psi = rep(0, nrow(cwd.mat.pos)),
-              m0=rep(0,nrow(cwd.mat.pos)),
-              m1=rep(0,nrow(cwd.mat.pos)),
-              mu=matrix(0,nrow=nrow(cwd.mat.pos),ncol=ncol(cwd.mat.pos)),
-              p = matrix(0, nrow=nrow(cwd.mat.pos), ncol=ncol(cwd.mat.pos)),
-              mu0 = 0,
-              mu01 = 0)
-
-
-## Build/Compile model, including steps:
-## (1) build model (2) compile model in C++
-## (3) specify MCMC parameters to collect and create MCMC algorithm
-cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
-c.cwdspatmodel <- compileNimble(cwdspatmodel, resetFunctions = TRUE)
-
-confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0', 'beta1',
-                                                   'gamma1','gamma0',
-                                                   'beta1hat', 'gamma1hat'
-                                                  ),
-                        enableWAIC = TRUE)
-cwdspatmcmc <- buildMCMC(confMC)
-c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel, resetFunctions = TRUE)## Run MCMC
-
-# theta <- rep(0, nrow(cwd.mat.pos))
-# theta.i <- rep(0, nrow(cwd.mat.pos))
-mcmc.out <- runMCMC(c.cwdspatmcmc,
-                    niter=20000,
-                    nburnin=5000,
-                    thin = 2,
-                    nchains=5,
-                    WAIC=TRUE)
-## convert post samples as mcmc.list object and diagnose convergence using coda functions
-post.samples <- mcmc.list(sapply(mcmc.out$samples,
-                                 as.mcmc,simplify=FALSE))
-pars <- c("beta0",'gamma0', 'beta1', 'gamma1', 'theta.c', 'theta.ci')
-plot(post.samples, trace=TRUE, density=FALSE)
-gelman.plot(post.samples)
-autocorr.plot(post.samples)
-## posterior summary
-summary(post.samples)
-## model assessment using WAIC value
-mcmc.out$WAIC
-
-```
-
-```{r, 2 years of winter effect wsMEAN}
-# year samp will be the number of years we're getting CWD samples for
-yearSamp<-c(seq(2003,2022, 1))
-# let's create our expected value
-
-dZIP <- nimbleFunction(
- run = function(x = integer(), lambda = double(),
-                zeroProb = double(), log = logical(0, default = 0)) {
-   returnType(double())
-   ## First handle non-zero data
-   if (x != 0) {
-       ## return the log probability if log = TRUE
-       return(dpois(x, lambda, log = TRUE) + log(1 - zeroProb))
-       ## or the probability if log = FALSE
-      #else return((1 - zeroProb) * dpois(x, lambda, log = FALSE))
-   }
-   ## From here down we know x is 0
-   totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
-   return(log(totalProbZero))
-   #return(totalProbZero)
- })
-
-registerDistributions(list(
-    dZIP = list(
-        BUGSdist = "dZIP(lambda, zeroProb)",
-        discrete = TRUE,
-        range = c(0, Inf),
-        types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
-     )))
-
-modelcode <- nimbleCode({
-  
-    #priors
-    beta0 ~ dnorm(0.0, sd = prec.beta0)  # vague prior on intercept
-    gamma0 ~ dnorm(0.0, sd=prec.gamma0)   
-    beta1~ dnorm(0.0, sd = prec.gamma1)
-    gamma1~ dnorm(0.0, sd = prec.beta1)
-    theta.c ~ dnorm(0.0, sd=prec.theta.c)
-    theta.ci ~ dnorm(0.0, sd=prec.theta.ci)
-    beta1hat ~ dnorm(0.0, sd=prec.beta1hat)
-    gamma1hat ~ dnorm(0.0, sd=prec.gamma1hat)
-    # priors for precision of normal distributions
-    prec.beta0 ~ dgamma(0.001,0.001)
-    prec.gamma0 ~ dgamma(0.001,0.001)
-    prec.gamma1 ~ dgamma(0.001,0.001)
-    prec.beta1 ~ dgamma(0.001,0.001)
-    prec.beta1hat ~dgamma(0.001,0.001)
-    prec.gamma1hat~dgamma(0.001,0.001)
-    prec.theta.c ~dgamma(0.001,0.001)
-    prec.theta.ci ~dgamma(0.001,0.001)
-    mu0 ~ dnorm(0, 0.0001)
-    mu01 ~ dnorm(0,0.0001)
-    
-    prec.c ~ dgamma(0.0001, 0.0001)
-    prec.ci ~ dgamma(0.0001, 0.0001)
-    gmm0 ~ dunif(-1,1)
-    gmm1 ~ dunif(-1,1)
-    # prec.h ~ dgamma(0.1, 0.1)
-    # prec.hi ~ dgamma(0.1, 0.1)
-    ## calculate alpha
-    # sd.c <- sd(phi[1:N]) # marginal SD of heterogeneity effects
-    # sd.h <- sd(theta[1:N])   # marginal SD of clustering (spatial) effects
-    # sd.ci <- sd(psi[1:N]) # marginal SD of heteorgenity effects -- zero inflated process
-    # sd.hi <- sd(theta.i[1:N]) # marginal SD of clustering effects -- zero inflated process
-    # alpha <- sd.h / (sd.c + sd.h)
-    # alpha.i <- sd.hi/(sd.ci + sd.hi)
-    # spatial random effects
-    phi[1:N] ~ dcar_proper(m0[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.c,gmm0)
-    psi[1:N] ~ dcar_proper(m1[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.ci,gmm1)
-    # likelih
-  for (i in 1 : N) {
-    m0[i] <- mu01
-    m1[i] <- mu01
-    for(j in 2: n.years){
-        mu[i,j] <- theta.c*cwd.p[i,j-1] + phi[i] + beta1*precip[i,j]  + beta1hat*precip[i,j-1]+ beta0
-        logit(p[i,j]) <- theta.ci*cwd.p[i,j-1] + gamma1*precip[i,j] + gamma1hat*precip[i,j-1]+ psi[i] + gamma0
-        y[i,j] ~ dZIP(lambda=mu[i,j], zeroProb=p[i,j])
-    }
-        }
-     # CAR model for spatial random effects
-})
-## Specify data and initial values
-constants <- list(N = nrow(cwd.mat.analyzed),
-                  mu.hat=cwd.r,
-                  n.years=length(yearSamp),
-                  L = length(W$adj),
-                  adj=W$adj,
-                  weights=W$weights,
-                  num=W$num,
-                  M=wCarCM$M,
-                  C=wCarCM$C)
-data <- list(y = cwd.mat.pos,
-             precip=wsMatMean,
-             cwd.p = cwd.mat.pos)
-inits <- list(beta1=0,
-              beta0=1,
-              theta.c = 0,
-              theta.ci = 0,
-              gamma1=0,
-              gamma0=1,
-              gamma1hat = 0,
-              beta1hat = 0,
-              prec.beta0 = 1,
-              prec.gamma0 = 1,
-              prec.gamma1 = 1,
-              prec.beta1 = 1,
-              prec.theta.c = 1,
-              prec.theta.ci = 1,
-              prec.beta1hat = 1,
-              prec.gamma1hat = 1,
-              prec.c = 1,
-              prec.ci = 1,
-              gmm0 = 0,
-              gmm1 = 0,
-              phi = rep(0, nrow(cwd.mat.pos)),
-              psi = rep(0, nrow(cwd.mat.pos)),
-              m0=rep(0,nrow(cwd.mat.pos)),
-              m1=rep(0,nrow(cwd.mat.pos)),
-              mu=matrix(0,nrow=nrow(cwd.mat.pos),ncol=ncol(cwd.mat.pos)),
-              p = matrix(0, nrow=nrow(cwd.mat.pos), ncol=ncol(cwd.mat.pos)),
-              mu0 = 0,
-              mu01 = 0)
-
-
-## Build/Compile model, including steps:
-## (1) build model (2) compile model in C++
-## (3) specify MCMC parameters to collect and create MCMC algorithm
-cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
-c.cwdspatmodel <- compileNimble(cwdspatmodel, resetFunctions = TRUE)
-
-confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0', 'beta1',
-                                                   'gamma1','gamma0',
-                                                   'beta1hat', 'gamma1hat'
-                                                  ),
-                        enableWAIC = TRUE)
-cwdspatmcmc <- buildMCMC(confMC)
-c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel, resetFunctions = TRUE)## Run MCMC
-
-# theta <- rep(0, nrow(cwd.mat.pos))
-# theta.i <- rep(0, nrow(cwd.mat.pos))
-mcmc.out <- runMCMC(c.cwdspatmcmc,
-                    niter=25000,
-                    nburnin=10000, # should use 10k for a burnin period
-                    thin = 2,
-                    nchains=5,
-                    WAIC=TRUE)
-## convert post samples as mcmc.list object and diagnose convergence using coda functions
-post.samples <- mcmc.list(sapply(mcmc.out$samples,
-                                 as.mcmc,simplify=FALSE))
-pars <- c("beta0",'gamma0', 'beta1', 'gamma1', 'theta.c', 'theta.ci')
-plot(post.samples, trace=TRUE, density=FALSE)
-gelman.plot(post.samples)
-autocorr.plot(post.samples)
-## posterior summary
-summary(post.samples)
-## model assessment using WAIC value
-mcmc.out$WAIC
-```
 
 ```{r, 2 years of wsMatMax}
 wsi.mat.scaled <- scale(wsi.mat)
@@ -1864,7 +1087,6 @@ modelcode <- nimbleCode({
     # sd.hi <- sd(theta.i[1:N]) # marginal SD of clustering effects -- zero inflated process
     # alpha <- sd.h / (sd.c + sd.h)
     # alpha.i <- sd.hi/(sd.ci + sd.hi)
-    # spatial random effects
     phi[1:N] ~ dcar_proper(m0[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.c,gmm0)
     psi[1:N] ~ dcar_proper(m1[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.ci,gmm1)
     # likelihood
@@ -1961,133 +1183,153 @@ mcmc.out$WAIC
 ```
 
 ```{r, 2 years of winter effect WSI-Score ZIB}
-wsi.mat.scaled <- scale(wsi.mat)
 
+cwdMat2 <- cwdDat2[,-c(1,2)]
+cwdMat2 <- cwdMat
+cwdMat <- matrix(0,nrow=nrow(cwdMat2), ncol=(ncol(cwdMat2)+1))
+cwdMat2[1770,4] <- NA
+for(i in 1:nrow(cwdMat2)){
+  for(j in 1:ncol(cwdMat2)){
+    cwdMat[i,j] <- as.numeric(cwdMat2[i,j])
+  }
+}
+cwdMat[,4] <- scale(cwdMat[,4])[,1]
+cwdMat[,5] <- scale(cwdMat[,5])[,1]
+#cwdMat[,ncol(cwdMat)-1] <- scale(cwdMat[,ncol(cwdMat)])[,1]
+cwdMat[,ncol(cwdMat)] <- scale(cwdMat[,1])[,1]
+Nparms <- 4
+# cwdMat[,1] <- round((cwdMat[,1]/cwdMat[,ncol(cwdMat)]) * 1000) # get # pos per 1000
+# cwdMat[,4] <- round((cwdMat[,4]/cwdMat[,ncol(cwdMat)]) * 1000) # get # male per 1000
+# cwdMat[,5] <- round((cwdMat[,5]/cwdMat[,ncol(cwdMat)]) * 1000) # get # fem per 1000
+
+
+write.table(cwdMat, "./data/cwd-mat-long")
+cwdMat<-read.table("./data/cwd-mat-long")
+for(i in 1:nrow(cwdMat)){
+  for(j in 1:ncol(cwdMat)){
+    if(is.null(cwdMat[i,j])){
+      cwdMat[i,j] <- 0
+    }
+  }
+}
 # year samp will be the number of years we're getting CWD samples for
 yearSamp<-c(seq(2003,2022, 1))
-# let's create our expected value
-
-dZIB <- nimbleFunction(
- run = function(x = integer(), prob = double(), zeroProb=double(),
-                theta = double(), log = logical(0, default = 0)) {
+dZIP <- nimbleFunction(
+ run = function(x = integer(), lambda = double(),
+                zeroProb = double(), log = logical(0, default = 0)) {
    returnType(double())
-   ## First handle non-zero data
+      ## First handle non-zero data
+  
    if (x != 0) {
-       ## return the log probability if log = TRUE
-     return(dnbinom(x, size=theta, prob=prob, log = TRUE) + log(1 - zeroProb))
-       ## or the probability if log = FALSE
+     # the probability that it is not generated by our zero process
+     # and the probability that it is generated by the count process
+
+     return((1-zeroProb)*dpois(x,lambda))
    }
-   ## From here down we know x is 0
-   totalProbZero<-zeroProb+(1-zeroProb)*dnbinom(0,size=theta,prob=prob,log=FALSE)
-   return(log(totalProbZero))
-   #return(totalProbZero)
+   # if it is a zero then it could be produced by the count process
+   # and also (therefore) not be structural OR
+   # it is non-structural (dbinom)
+   totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
+   return(totalProbZero)   
+ })
+rZIP <- nimbleFunction(
+ run = function(n = integer(), lambda = double(),
+                zeroProb = double()) {
+   returnType(integer())
+   # if the zero-probability is high rbinom returns 1 returns 1
+   # and thus rZIP returns 0; this is a structural zero
+    isStructural = rbinom(1,prob=zeroProb,size=1) 
+    if(isStructural) return(0)
+    # if it wasn't a structural zero, then return rpois(lambda)
+    # could still return non-structural zeros
+    return(rpois(1,lambda))
  })
 
+# let's create our expected value
 registerDistributions(list(
-    dZIB = list(
-        BUGSdist = "dZIB(prob, zeroProb, theta)",
+    dZIP = list(
+        BUGSdist = "dZIP(lambda, zeroProb)",
         discrete = TRUE,
         range = c(0, Inf),
-        types = c('value = integer()', 'prob = double()', 'zeroProb = double()', 'theta = double()')
+        types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
      )))
 
 modelcode <- nimbleCode({
-  
-    ## priors
-    beta0 ~ dnorm(0.0, sd = prec.beta0)  # vague prior on intercept
-    gamma0 ~ dnorm(0.0, sd=prec.gamma0)   
-    beta1~ dnorm(0.0, sd = prec.gamma1)
-    gamma1~ dnorm(0.0, sd = prec.beta1)
-    theta.c ~ dnorm(0.0, sd=prec.theta.c)
-    theta.ci ~ dnorm(0.0, sd=prec.theta.ci)
-    beta1hat ~ dnorm(0.0, sd=prec.beta1hat)
-    gamma1hat ~ dnorm(0.0, sd=prec.gamma1hat)
-    # priors for precision of normal distributions
-    prec.beta0 ~ dgamma(0.001,0.001)
-    prec.gamma0 ~ dgamma(0.001,0.001)
-    prec.gamma1 ~ dgamma(0.001,0.001)
-    prec.beta1 ~ dgamma(0.001,0.001)
-    prec.beta1hat ~dgamma(0.001,0.001)
-    prec.gamma1hat~dgamma(0.001,0.001)
-    prec.theta.c ~dgamma(0.001,0.001)
-    prec.theta.ci ~dgamma(0.001,0.001)
-    mu0 ~ dnorm(0, 0.0001)
-    mu01 ~ dnorm(0,0.0001)
-    
-    prec.c ~ dgamma(0.0001, 0.0001)
-    prec.ci ~ dgamma(0.0001, 0.0001)
-    gmm0 ~ dunif(-1,1)
-    gmm1 ~ dunif(-1,1)
-    # prec.h ~ dgamma(0.1, 0.1)
-    # prec.hi ~ dgamma(0.1, 0.1)
-    ## calculate alpha
-    # sd.c <- sd(phi[1:N]) # marginal SD of heterogeneity effects
-    # sd.h <- sd(theta[1:N])   # marginal SD of clustering (spatial) effects
-    # sd.ci <- sd(psi[1:N]) # marginal SD of heteorgenity effects -- zero inflated process
-    # sd.hi <- sd(theta.i[1:N]) # marginal SD of clustering effects -- zero inflated process
-    # alpha <- sd.h / (sd.c + sd.h)
-    # alpha.i <- sd.hi/(sd.ci + sd.hi)
-    # spatial random effects
-    phi[1:N] ~ dcar_proper(m0[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.c,gmm0)
-    psi[1:N] ~ dcar_proper(m1[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.ci,gmm1)
+
+     # CAR mod
     # likelihood
-  for (i in 1 : N) {
-    m0[i] <- mu01
-    m1[i] <- mu01
-    for(j in 2: n.years){
-        theta[i,j] ~ dunif(0,50)
-        # Observation Model
-        mu[i,j] <- theta.c*cwd.p[i,j-1] + phi[i] + beta1*precip[i,j]  + beta1hat*precip[i,j-1] + beta0
-        logit(p[i,j]) <- theta.ci*cwd.p[i,j-1] + gamma1*precip[i,j] + gamma1hat*precip[i,j-1]+ psi[i] + gamma0
-        prob[i,j] <- theta[i,j]/(theta[i,j]+mu[i,j])
-        y[i,j] ~ dZIB(prob=prob[i,j],zeroProb=p[i,j],theta=theta[i,j])
-        #process Model
+for(j in 2: (n.years)){  
+      for (i in 1 : N) {
+        # beta[4] male
+        #phi.t.minus.1 <- theta[j,1] * (beta[1]*y[(N*(j-1)+i),2] + beta[2]*y[(N*(j-2)+i),1])
+        log(lambda[((N*(j-2))+i)]) <-  beta[1]*y[(N*(j-1)+i),2] + beta[2]*y[(N*(j-2)+i),Ncol] + beta[3]*j + phi[i]
+        # time lag term for zero process
+        #phi.hat.t.minus.1 <- theta[j,2] * (beta.hat[1]*y[(N*(j-1)+i),2] + beta.hat[2]*y[(N*(j-2)+i),1])
+        logit(p[((N*(j-2))+i)]) <-  beta.hat[1]*y[(N*(j-1)+i),2] + beta.hat[2]*y[(N*(j-2)+i),Ncol] + beta.hat[3]*j + phi.hat[i]
+        y[(N*(j-1)+i), 1] ~ dZIP(lambda[((N*(j-2))+i)],p[((N*(j-2))+i)])  
         }
     }
-     # CAR model for spatial random effects
-})
-## Specify data and initial values
-constants <- list(N = nrow(cwd.mat.analyzed),
-                  mu.hat=cwd.r,
-                  n.years=length(yearSamp),
+    ## priors
+
+    for(i in 1:Nparms){
+      # hyperpriors for reg coeff
+      prec.beta[i] ~ dgamma(0.1, 0.1)
+      prec.beta.hat[i]~ dgamma(0.1, 0.1)
+      beta[i] ~ dnorm(0.0, prec.beta[i])
+      beta.hat[i]~ dnorm(0.0, prec.beta.hat[i])
+    }
+  prec.c ~ dgamma(0.1, 0.1)
+  prec.c.hat ~dgamma(0.1,0.1)
+
+  phi[1:N] ~ dcar_normal(adj[1:L], weights[1:L], num[1:N],
+                           prec.c, zero_mean=0)
+  phi.hat[1:N] ~ dcar_normal(adj[1:L], weights[1:L], num[1:N],
+                           prec.c.hat, zero_mean=0)
+  
+
+    # beta 0 captures unstructured heterogeneity in the count and zero processes
+  # for(j in 2:n.years){
+  #   for(i in 1:N){
+  #     prec.beta0[(N*(j-2)) + i] ~ dgamma(0.01,0.01)
+  #     prec.beta0.hat[(N*(j-2)) + i] ~ dgamma(0.01,0.01)
+  #     beta0[(N*(j-2)) + i] ~ dnorm(0.0,prec.beta0[(N*(j-2)) + i])
+  #     beta0.hat[(N*(j-2)) + i] ~ dnorm(0.0,prec.beta0.hat[(N*(j-2)) + i])
+  #   }
+  # }
+  # prec.theta ~ dgamma(0.01, 0.01)
+  # prec.theta.hat ~ dgamma(0.01, 0.01)
+  # theta ~ dnorm(0,prec.theta)
+  # theta.hat ~ dnorm(0,prec.theta.hat)
+  })
+## Specify data and initial valu)es
+constants <- list(N = length(unique(wiTwnshpShp$uid)),
+                  n.years=19,
+                  Ncol = ncol(cwdMat),
+                  Nparms = Nparms,
                   L = length(W$adj),
                   adj=W$adj,
-                  weights=W$weights,
                   num=W$num,
-                  M=wCarCM$M,
-                  C=wCarCM$C)
-data <- list(y = cwd.mat.pos,
-             precip=wsi.mat.scaled,
-             cwd.p = scale(cwd.mat.pos))
-inits <- list(beta1=0,
-              beta0=1,
-              theta.c = 0,
-              theta.ci = 0,
-              gamma1=0,
-              gamma0=1,
-              gamma1hat = 0,
-              beta1hat = 0,
-              prec.beta0 = 1,
-              prec.gamma0 = 1,
-              prec.gamma1 = 1,
-              prec.beta1 = 1,
-              prec.theta.c = 1,
-              prec.theta.ci = 1,
-              prec.beta1hat = 1,
-              prec.gamma1hat = 1,
+                  weights = W$weights
+                  )
+                  #M=wCarCM$M,
+                  #C=wCarCM$C)
+data <- list(y = cwdMat)
+inits <- list(lambda = rep(0,length(unique(wiTwnshpShp$uid))*19),
+              p = rep(0,length(unique(wiTwnshpShp$uid))*19),
+              beta0  = rep(0,length(unique(wiTwnshpShp$uid))*19),
+              beta0.hat = rep(0,length(unique(wiTwnshpShp$uid))*19),
+              phi =  rep(0,length(unique(wiTwnshpShp$uid))),
+              phi.hat =  rep(0,length(unique(wiTwnshpShp$uid))),
               prec.c = 1,
-              prec.ci = 1,
-              gmm0 = 0,
-              gmm1 = 0,
-              phi = rep(0, nrow(cwd.mat.pos)),
-              psi = rep(0, nrow(cwd.mat.pos)),
-              m0=rep(0,nrow(cwd.mat.pos)),
-              m1=rep(0,nrow(cwd.mat.pos)),
-              mu=matrix(0,nrow=nrow(cwd.mat.pos),ncol=ncol(cwd.mat.pos)),
-              p = matrix(0, nrow=nrow(cwd.mat.pos), ncol=ncol(cwd.mat.pos)),
-              mu0 = 0,
-              mu01 = 0)
-
+              prec.c.hat = 1,
+              prec.theta = 1,
+              prec.theta.hat = 1,
+              theta = 0,
+              theta.hat = 0,
+              prec.beta.hat = rep(1,Nparms),
+              prec.beta = rep(1,Nparms),
+              beta = rep(0,Nparms),
+              beta.hat = rep(0,Nparms))
 
 ## Build/Compile model, including steps:
 ## (1) build model (2) compile model in C++
@@ -2095,27 +1337,20 @@ inits <- list(beta1=0,
 cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
 c.cwdspatmodel <- compileNimble(cwdspatmodel, resetFunctions = TRUE)
 
-confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0', 'beta1',
-                                                   'gamma1','gamma0',
-                                                   'beta1hat', 'gamma1hat',
-                                                   'theta.c', 'theta.ci'
-                                                  ),
+confMC <- configureMCMC(cwdspatmodel, monitors = c('beta','beta.hat'),
                         enableWAIC = TRUE)
 cwdspatmcmc <- buildMCMC(confMC)
 c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel, resetFunctions = TRUE)## Run MCMC
-
-# theta <- rep(0, nrow(cwd.mat.pos))
-# theta.i <- rep(0, nrow(cwd.mat.pos))
 mcmc.out <- runMCMC(c.cwdspatmcmc,
-                    niter=36000,
-                    nburnin=30000, # should use 10k for a burnin period
-                    thin = 2,
-                    nchains=4,
+                    niter=200000,
+                    nburnin=100000, # should use 10k for a burnin period
+                    thin = 50,
+                    nchains=3,
                     WAIC=TRUE)
 ## convert post samples as mcmc.list object and diagnose convergence using coda functions
 post.samples <- mcmc.list(sapply(mcmc.out$samples,
                                  as.mcmc,simplify=FALSE))
-pars <- c("beta0",'gamma0','beta1hat', 'gamma1hat', 'beta1', 'gamma1', 'theta.c', 'theta.ci')
+
 plot(post.samples, trace=TRUE, density=FALSE)
 gelman.plot(post.samples)
 autocorr.plot(post.samples)
@@ -2123,184 +1358,21 @@ autocorr.plot(post.samples)
 summary(post.samples)
 ## model assessment using WAIC value
 mcmc.out$WAIC
+
+mcmc.out$samples
 ```
 
-```{r, 2 years of winter effect WSI-Score ZIB}
-wsi.mat.scaled <- scale(wsi.mat)
+```{r examine posterior-samples}
 
-# year samp will be the number of years we're getting CWD samples for
-yearSamp<-c(seq(2003,2022, 1))
-# let's create our expected value
-
-dZIB <- nimbleFunction(
- run = function(x = integer(), prob = double(), zeroProb=double(),
-                theta = double(), log = logical(0, default = 0)) {
-   returnType(double())
-   ## First handle non-zero data
-   if (x != 0) {
-       ## return the log probability if log = TRUE
-     return(dnbinom(x, size=theta, prob=prob, log = TRUE) + log(1 - zeroProb))
-       ## or the probability if log = FALSE
-   }
-   ## From here down we know x is 0
-   totalProbZero<-zeroProb+(1-zeroProb)*dnbinom(0,size=theta,prob=prob,log=FALSE)
-   return(log(totalProbZero))
-   #return(totalProbZero)
- })
-
-registerDistributions(list(
-    dZIB = list(
-        BUGSdist = "dZIB(prob, zeroProb, theta)",
-        discrete = TRUE,
-        range = c(0, Inf),
-        types = c('value = integer()', 'prob = double()', 'zeroProb = double()', 'theta = double()')
-     )))
-
-modelcode <- nimbleCode({
-  
-    ## priors
-    beta0 ~ dnorm(0.0, sd = prec.beta0)  # vague prior on intercept
-    gamma0 ~ dnorm(0.0, sd=prec.gamma0)   
-    beta1~ dnorm(0.0, sd = prec.gamma1)
-    gamma1~ dnorm(0.0, sd = prec.beta1)
-    theta.c ~ dnorm(0.0, sd=prec.theta.c)
-    theta.ci ~ dnorm(0.0, sd=prec.theta.ci)
-    beta1hat ~ dnorm(0.0, sd=prec.beta1hat)
-    gamma1hat ~ dnorm(0.0, sd=prec.gamma1hat)
-    # priors for precision of normal distributions
-    prec.beta0 ~ dgamma(0.001,0.001)
-    prec.gamma0 ~ dgamma(0.001,0.001)
-    prec.gamma1 ~ dgamma(0.001,0.001)
-    prec.beta1 ~ dgamma(0.001,0.001)
-    prec.beta1hat ~dgamma(0.001,0.001)
-    prec.gamma1hat~dgamma(0.001,0.001)
-    prec.theta.c ~dgamma(0.001,0.001)
-    prec.theta.ci ~dgamma(0.001,0.001)
-    exp()
-    mu0 ~ dnorm(0, 0.0001)
-    mu01 ~ dnorm(0,0.0001)
-    
-    prec.c ~ dgamma(0.0001, 0.0001)
-    prec.ci ~ dgamma(0.0001, 0.0001)
-    gmm0 ~ dunif(-1,1)
-    gmm1 ~ dunif(-1,1)
-    
-    
-    # PRIORS TO ADD
-    prec.samp ~ dgamma(0.0001, 0.0001)
-    
-    # prec.h ~ dgamma(0.1, 0.1)
-    # prec.hi ~ dgamma(0.1, 0.1)
-    ## calculate alpha
-    # sd.c <- sd(phi[1:N]) # marginal SD of heterogeneity effects
-    # sd.h <- sd(theta[1:N])   # marginal SD of clustering (spatial) effects
-    # sd.ci <- sd(psi[1:N]) # marginal SD of heteorgenity effects -- zero inflated process
-    # sd.hi <- sd(theta.i[1:N]) # marginal SD of clustering effects -- zero inflated process
-    # alpha <- sd.h / (sd.c + sd.h)
-    # alpha.i <- sd.hi/(sd.ci + sd.hi)
-    # spatial random effects
-    phi[1:N] ~ dcar_proper(m0[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.c,gmm0)
-    psi[1:N] ~ dcar_proper(m1[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.ci,gmm1)
-    # likelihood
-  for (i in 1 : N) {
-    m0[i] <- mu01
-    m1[i] <- mu01
-    for(j in 2: n.years){
-        theta[i,j] ~ dunif(0,50)
-        #process Model
-        # probability of there actually being a postiive in the population
-        log(mu[i,j]) <- n.deer.time.i*rate.i + beta1 * n.deer.time.iminus1 * rate.iminus1 + theta.c*precip[i,j-1] + theta + phi[i] + beta1*precip[i,j]  + beta1hat*precip[i,j-1] + beta0
-        logit(p[i,j]) <- theta.ci*cwd.p[i,j-1] + gamma1*precip[i,j] + gamma1hat*precip[i,j-1]+ psi[i] + gamma0
-        prob[i,j] <- theta[i,j]/(theta[i,j]+mu[i,j])
-        n.pos[i,j] ~ dZIB(prob=prob[i,j],zeroProb=p[i,j],theta=theta[i,j]) # true number of positives per 1k
-        
-        # Observation Model
-        y[i,j] ~ dnorm(n.samp[i,j] * n.pos[i,j]/1000, prec.samp)
-        
-        }
-    }
-     # CAR model for spatial random effects
-})
-## Specify data and initial values
-constants <- list(N = nrow(cwd.mat.analyzed),
-                  mu.hat=cwd.r,
-                  n.years=length(yearSamp),
-                  L = length(W$adj),
-                  adj=W$adj,
-                  weights=W$weights,
-                  num=W$num,
-                  M=wCarCM$M,
-                  C=wCarCM$C)
-data <- list(y = cwd.mat.pos,
-             precip=wsi.mat.scaled,
-             cwd.p = scale(cwd.mat.pos))
-inits <- list(beta1=0,
-              beta0=1,
-              theta.c = 0,
-              theta.ci = 0,
-              gamma1=0,
-              gamma0=1,
-              gamma1hat = 0,
-              beta1hat = 0,
-              prec.beta0 = 1,
-              prec.gamma0 = 1,
-              prec.gamma1 = 1,
-              prec.beta1 = 1,
-              prec.theta.c = 1,
-              prec.theta.ci = 1,
-              prec.beta1hat = 1,
-              prec.gamma1hat = 1,
-              prec.c = 1,
-              prec.ci = 1,
-              gmm0 = 0,
-              gmm1 = 0,
-              phi = rep(0, nrow(cwd.mat.pos)),
-              psi = rep(0, nrow(cwd.mat.pos)),
-              m0=rep(0,nrow(cwd.mat.pos)),
-              m1=rep(0,nrow(cwd.mat.pos)),
-              mu=matrix(0,nrow=nrow(cwd.mat.pos),ncol=ncol(cwd.mat.pos)),
-              p = matrix(0, nrow=nrow(cwd.mat.pos), ncol=ncol(cwd.mat.pos)),
-              mu0 = 0,
-              mu01 = 0)
-
-
-## Build/Compile model, including steps:
-## (1) build model (2) compile model in C++
-## (3) specify MCMC parameters to collect and create MCMC algorithm
-cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
-c.cwdspatmodel <- compileNimble(cwdspatmodel, resetFunctions = TRUE)
-
-confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0', 'beta1',
-                                                   'gamma1','gamma0',
-                                                   'beta1hat', 'gamma1hat',
-                                                   'theta.c', 'theta.ci'
-                                                  ),
-                        enableWAIC = TRUE)
-cwdspatmcmc <- buildMCMC(confMC)
-c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel, resetFunctions = TRUE)## Run MCMC
-
-# theta <- rep(0, nrow(cwd.mat.pos))
-# theta.i <- rep(0, nrow(cwd.mat.pos))
-mcmc.out <- runMCMC(c.cwdspatmcmc,
-                    niter=36000,
-                    nburnin=30000, # should use 10k for a burnin period
-                    thin = 2,
-                    nchains=4,
-                    WAIC=TRUE)
-## convert post samples as mcmc.list object and diagnose convergence using coda functions
-post.samples <- mcmc.list(sapply(mcmc.out$samples,
-                                 as.mcmc,simplify=FALSE))
-pars <- c("beta0",'gamma0','beta1hat', 'gamma1hat', 'beta1', 'gamma1', 'theta.c', 'theta.ci')
-plot(post.samples, trace=TRUE, density=FALSE)
-gelman.plot(post.samples)
-autocorr.plot(post.samples)
-## posterior summary
-summary(post.samples)
-## model assessment using WAIC value
-mcmc.out$WAIC
+postSamps<-mcmc.out$samples
+mean(postSamps$chain2[,"gamma1"][])
 ```
 
-```{r}
+
+```{r plot NAs for sanity check}
+plot(wiTwnshpShpWSI[,10])
+plot(wiTwnshpShpWSI[which(wiTwnshpShpWSI$uid=="1-10-E"),])  
+
 ```
 
 ```{r}

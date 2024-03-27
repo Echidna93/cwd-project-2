@@ -48,7 +48,29 @@ wiCountyShp <- st_read("./data/shapefiles/County_Boundaries_24K/County_Boundarie
 wiCountyShp <- wiCountyShp %>% filter(COUNTY_NAM %in% unique(WIDat$County))
 ```
 
-```{r transform shps}
+```{r develop HSI}
+# HABITAT ASSESSMENT FOR DEER IN ARKANSAS 715
+ # Statewide habitat assessment for
+ # white-tailed deer in Arkansas using
+ # satellite imagery
+#  Water 0.00 0.00
+#  Low intensity residential 0.80 0.50
+#  High intensity residential 0.10 0.10
+#  Commercial/industrial/transportation 0.00 0 Bare rock/sand/clay 0.00 0.00
+#  Quarries/strip mines/gravel pits 0.00 0.00
+#  Transitional 0.80 0.00
+#  Deciduous forest 0.40 1.00
+#  Evergreen forest 0.10 1.00
+#  Mixed forest 0.30 1.00
+#  Shrubland 1.00 1.00
+#  Grasslands/herbaceous 1.00 0.00
+#  Pasture/hay 1.00 0.00
+#  Row crops 1.00 0.00
+#  Small grains 1.00 0.00
+#  Urban/recreational grasses 0.80 0.00
+#  Woody wetlands 1.00 0.75
+#  Emergent herbaceous wetlands 1.00 0.00
+wiTWnshpShp <- wiTwnshpShp %>% filter(uid %in% )
 wiCountyShp<-st_transform(wiCountyShp, crs(wiTwnshpShp))
 wiCountyTwnshps <- st_intersection(wiCountyShp, wiTwnshpShp)
 wiTwnshpShp<-st_transform(wiTwnshpShp, crs(wiLC))
@@ -57,22 +79,86 @@ study.ext<-extent(wiCountyTwnshps)
 lc.cropped<-crop(wiLC, study.ext)
 wiTwnshpShp<-st_crop(wiTwnshpShp, study.ext)
 wiTwnshpShp <- wiTwnshpShp %>% mutate(uid = paste0(TWP,"-",RNG,"-", DIR_ALPHA))
-wiTwnshpShpSpat <- as(wiTwnshpShp, "Spatial")
+wiTwnshpShpSpat <- as(wiCountyTwnshps, "Spatial")
 lcTypes<-unique(lc.cropped$cls_desc_1)
 lcTypes <- c(c("uid","nCells"),lcTypes)
-lcDat = data.frame(matrix(0,nrow = nrow(wiTwnshpShp), ncol = (length(lcTypes)))) 
+lcDat = data.frame(matrix(0,nrow = nrow(wiTwnshpShp), ncol = (length(lcTypes))))
+hsiDat <- data.frame(matrix(0, nrow=length(unique(wiCountyTwnshps$uid)), ncol=4)) # 1699 x 2 df for food and cover cols
+
+names(hsiDat) <- c("uid","nCells", "fd", "cv") # food (fd) and cover (cv) suitability values
+hsiDat$uid <- unique(wiCountyTwnshps$uid)
 names(lcDat) <- lcTypes
 lcDat['uid'] <- unique(wiTwnshpShp$uid)
-for(i in 1:nrow(wiTwnshpShpSpat)){
-  lcDat[i,'nCells']<-ncell(crop(lc.cropped, extent(bbox(wiTwnshpShpSpat[i,])))) # denominator
-  lcTwnshp <- extract(lc.cropped, extent(bbox(wiTwnshpShpSpat[i,])))
-  for(j in 1:length(lcTwnshp)){
-      lcDat[i,as.character(lcTwnshp[j])] = lcDat[i,as.character(lcTwnshp[j])] + 1
+lcDat <- lcDat2
+hsiDat <- hsiDat %>% filter(uid %in% lcDat$uid)
+wiCountyTwnshps <- wiCountyTwnshps %>% filter(uid %in% lcDat$uid)
+lcDat <- lcDat %>% arrange(uid)
+hsiDat <- hsiDat %>% arrange(uid)
+for(i in 1:nrow(lcDat)){
+  hsiDat[i,]$nCells <- lcDat[i,]$nCells
+  for(j in 2:ncol(lcDat)){
+      
+      colname <- colnames(lcDat)[j]
+      # if(grepl("x5000", colname)){ # just here as a placeholder; water
+      #   break
+      # }
+      if(lcDat[i,j] > 0){
+      if(grepl("X1200", colname))# low-intensity residential
+      {
+       hsiDat[i,]$fd <- hsiDat[i,]$fd + (lcDat[i,j] * 0.8)
+       hsiDat[i,]$cv <- hsiDat[i,]$cv + (lcDat[i,j] * 0.5)
+      }
+      if(grepl("X1100", colname))# high-intensity residential
+      {
+       hsiDat[i,]$fd <- hsiDat[i,]$fd + (lcDat[i,j] * 0.1)
+       hsiDat[i,]$cv <- hsiDat[i,]$cv + (lcDat[i,j] * 0.1)
+      }
+      # NOTE: barren will account for quarries, mines, &c 
+      # if(grepl("X7000")){  # barren
+      #   break
+      # }
+      if(grepl("X42", colname))# deciduous
+      {
+       hsiDat[i,]$fd <- hsiDat[i,]$fd + (lcDat[i,j] * 0.4)
+       hsiDat[i,]$cv <- hsiDat[i,]$cv + (lcDat[i,j] * 1)
+      }
+      if(grepl("X41", colname)){ # coniferous
+       hsiDat[i,]$fd <- hsiDat[i,]$fd + (lcDat[i,j] * 0.1)
+       hsiDat[i,]$cv <- hsiDat[i,]$cv + (lcDat[i,j] * 1)
+      }
+      if(grepl("X43", colname)){ # coniferous-deciduous mix
+       hsiDat[i,]$fd <- hsiDat[i,]$fd + (lcDat[i,j] * 0.3)
+       hsiDat[i,]$cv <- hsiDat[i,]$cv + (lcDat[i,j] * 1)
+      }
+      if(grepl("X8000", colname)){ # shrubland
+       hsiDat[i,]$fd <- hsiDat[i,]$fd + (lcDat[i,j] * 1)
+       hsiDat[i,]$cv <- hsiDat[i,]$cv + (lcDat[i,j] * 1)
+      }
+      if(grepl("X3000", colname) ||  grepl("X2000", colname)){ # rowcrops; grassland
+       hsiDat[i,]$fd <- hsiDat[i,]$fd + (lcDat[i,j] * 1)
+       hsiDat[i,]$cv <- hsiDat[i,]$cv + (lcDat[i,j] * 0)
+      }
+      if(grepl("X64", colname)){ # woody wetlands
+       hsiDat[i,]$fd <-  hsiDat[i,]$fd + (lcDat[i,j] * 1)
+       hsiDat[i,]$cv <- hsiDat[i,]$cv + (lcDat[i,j] * 0.75)
+      }
+      if(grepl("X62", colname) || grepl("X63", colname)) { # herb. wetlands
+       hsiDat[i,]$fd <- hsiDat[i,]$fd + (lcDat[i,j] * 1)
+       hsiDat[i,]$cv <- hsiDat[i,]$cv + (lcDat[i,j] * 0)
+      }
     }
+  }
 }
+hsiDat$fd <- hsiDat$fd/hsiDat$nCells
+hsiDat$cv <- hsiDat$cv/hsiDat$nCells
+# write.table(lcDat, "./data/lcDat")
+# lcDat <- read.table("./data/lcDat")
+write.table(hsiDat, "./data/hsiDat")
+hsiDat2<-read.table("./data/hsiDat")
+# crop our landcover dat to be just the study area
 
-write.table(lcDat, "./data/lcDat")
-lcDat2 <- read.table("./data/lcDat")
+
+
 #   farm<-st_transform(get(farms[j]), crs(landcover))
 #   farm.extent<-extent(farm)
 #   farm.extent<-extend(farm.extent, buffDistLrg*2)
@@ -172,106 +258,4 @@ lcDat2 <- read.table("./data/lcDat")
 
 ```
 ```{r calculate}
-
-
-camDatSummary$propForest1k <- 0
-camDatSummary$propForest3k <- 0
-camDatSummary$propForest5k <- 0
-# grab the extent of our farm
-farms <- c("S01","S02", "S03", "S04", "S05a", "S05b", "S05c", "S05d", "S06", "S07", "S09", "S10", "S11", "S12")
-for(j in 1:length(farms)){
-  if(farms[j] == "S07" || farms[j] == "S10"){
-    landcover <- landcover_PA
-  }
-  else{
-    landcover <- landcover_MNWI
-  }
-  
-  farm<-st_transform(get(farms[j]), crs(landcover))
-  farm.extent<-extent(farm)
-  farm.extent<-extend(farm.extent, buffDistLrg*2)
-  #landcoverMNWI<-projectExtent(landcoverMNWI, crs(s01))
-  # crop our lc dataset to the buffered extent
-  lc.cropped<-crop(landcover, farm.extent) %>% 
-  st_as_stars() %>%
-  st_as_sf()
-farmBuffSml<-farm %>%
-  st_buffer(buffDistSml) # buffer by 30m
-
-farmBuffMed<-farm %>%
-  st_buffer(buffDistMed) # buffer by 30m
-
-farmBuffLrg<-farm %>%
-  st_buffer(buffDistLrg) # buffer by 30m
-
-# subtract the buffered farm from the original shp
-# farm.fenceline.buff<-st_difference(farmBuffSml, farm.full)
-
-# intersect our fencline and our cropped landcover tif
-lcFullSml<-st_intersection(lc.cropped, farmBuffSml)
-lcFullMed<-st_intersection(lc.cropped, farmBuffMed)
-lcFullLrg<-st_intersection(lc.cropped, farmBuffLrg)
-# lcFullSml <- st_intersection(lc.cropped, lcFenclineSml)
-# lcFullMed <- st_intersection(lc.cropped, lcFenclineMed)
-# lcFullLrg <- st_intersection(lc.cropped, lcFenclineLrg)
-# convert back to raster so we can use sampleStratified
-lcFullSmlRast<-st_rasterize(lcFullSml)
-lcFullMedRast<-st_rasterize(lcFullMed)
-lcFullLrgRast<-st_rasterize(lcFullLrg)
-
-propForestSml <- 0
-propForestMed <- 0
-propForestLrg <- 0
-for(i in 1:nrow(lcFullSml)){
-  if(farms[j] == "S07" || farms[j] == "S10"){
-    if(lcFullSml[i,]$nlcd.landcover.PA %in% seq(41,43,1)){
-      propForestSml <- propForestSml + 1
-    } 
-  }else{
-    if(lcFullSml[i,]$clipped.area %in% seq(41,43,1)){
-    propForestSml <- propForestSml + 1
-  }   
-    }
-     
-}
-propForestSml <- propForestSml/nrow(lcFullSml)
-
-for(i in 1:nrow(lcFullMed)){
-  if(farms[j] == "S07" || farms[j] == "S10"){
-    if(lcFullMed[i,]$nlcd.landcover.PA %in% seq(41,43,1)){
-      propForestMed <- propForestMed + 1
-    } 
-  }else{
-    if(lcFullMed[i,]$clipped.area %in% seq(41,43,1)){
-    propForestMed <- propForestMed + 1
-  }   
-    }
-   
-}
-propForestMed <- propForestMed/nrow(lcFullMed)
-
-for(i in 1:nrow(lcFullLrg)){
-  if(farms[j] == "S07" || farms[j] == "S10"){
-    if(lcFullLrg[i,]$nlcd.landcover.PA %in% seq(41,43,1)){
-      propForestLrg <- propForestLrg + 1
-    } 
-  }else{
-    if(lcFullLrg[i,]$clipped.area %in% seq(41,43,1)){
-    propForestLrg <- propForestLrg + 1
-  }   
-    }
-    
-}
-propForestLrg <- propForestLrg/nrow(lcFullLrg)
-
-camDatSummary[which(camDatSummary$sid == farms[j]),]$propForest1k <- propForestSml
-camDatSummary[which(camDatSummary$sid == farms[j]),]$propForest3k <- propForestMed
-camDatSummary[which(camDatSummary$sid == farms[j]),]$propForest5k <- propForestLrg
-}
-
-write.table(camDatSummary, "./data/camDatSummary")
-camDatSummary<-read.table("./data/camDatSummary")
-# buffer the extent so that we don't cut off the farm
-# buffer this by twice the largest buffer extent
-camDatSummary
 ```
