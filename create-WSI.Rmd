@@ -5,8 +5,41 @@ date: "2023-12-27"
 ---
 
 ```{r}
-wiShp<-st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+#library("rgdal")
+library("raster")
+library("sf")
+library("leafsync")
+library("dplyr")
+library("ggplot2")
+library("stars")
+library(spatialEco)
+library(spatstat.random)
+library(data.table)
+library(geoR)
+library(RColorBrewer)
+library(spdep)
+library(spatialreg)
+library(classInt)
+#library(rgeos)
+library(landscapemetrics)
+library(nimble)
+library(coda)
+library(prism)
+library(terra)
+library(maps)
+library(raster)
 
+```
+
+```{r}
+wiShp<-st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+wiTwnshpShp <- st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+studyTwnshps <- read.table("./data/WITimeSeries-4-30-24")
+studyTwnshps <- studyTwnshps %>% dplyr::select(uid) %>% filter(!duplicated(uid)) %>% as.vector()
+# make uid
+wiTwnshpShp$uid <- paste0(wiTwnshpShp$TWP, "-", wiTwnshpShp$RNG, "-", wiTwnshpShp$DIR_ALPHA)
+wiTwnshpShp <- wiTwnshpShp %>% filter(uid %in% studyTwnshps$uid)
+prism_set_dl_dir('D:\\prism-dat-f')
 ```
 
 ```{r, calculate WSI matrix, echo=FALSE}
@@ -37,10 +70,10 @@ wiShp.e<-projectExtent(wiCountyShp, pdStackRaw)
 pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
 # first let's get these into the same CRS
 wiTwnshpShp <- wiTwnshpShp %>% mutate(uid = paste0(TWP, "-", RNG, "-", DIR_ALPHA))
-wiTwnshpSpat<-project(as(wiTwnshpShp, "SpatVector"), crs(wiCountyShp))
-wiTwnshpSpat<-as(wiTwnshpSpat,"Spatial")
+wiTwnShpSpat<-project(as(wiTwnshpShp, "SpatVector"), crs(wiCountyShp))
+wiTwnShpSpat<-as(wiTwnShpSpat,"Spatial")
 # get the spat data into the same CRS
-#wiTwnshpSpat<-as(wiTwnshpShp, "Spatial")
+#wiTwnShpSpat<-as(wiTwnshpShp, "Spatial")
 cumPPT <- 0
 wsiDat <- as.data.frame(matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years)))
 yearStrings <- c()
@@ -72,13 +105,13 @@ for(i in 1:(length(years)-1)){
   tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
   tminWI <- terra::crop(tminRaw, wiShp.e)
   ppt_by_twnshp <- terra::extract(pptWI,
-                                wiTwnshpSpat,
+                                wiTwnShpSpat,
                                 method="bilinear")
   tmax_by_twnshp <- terra::extract(tmaxWI,
-                                wiTwnshpSpat,
+                                wiTwnShpSpat,
                                 method="bilinear")
   tmin_by_twnshp <- terra::extract(tminWI,
-                                wiTwnshpSpat,
+                                wiTwnShpSpat,
                                 method="bilinear")
     # index for the current day
     k <- 1
@@ -308,7 +341,7 @@ for(i in 1:(length(years)-1)){
   pptWI <- terra::crop(pptRaw, wiShp.e)
   tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
   tminWI <- terra::crop(tminRaw, wiShp.e)
-  ppt_by_twnshp <- terra::extract(pptWI,pl
+  ppt_by_twnshp <- terra::extract(pptWI,
                                 wiTwnShpSpat,
                                 method="bilinear")
   tmax_by_twnshp <- terra::extract(tmaxWI,
@@ -374,14 +407,14 @@ pdStackRaw<-pd_stack(prism_archive_subset("ppt",
 
 # looking at only at Iowa County
 #wiCountyShp<-subset(wiCountyShp,wiCountyShp$COUNTY_NAM == "Iowa")
-wiShp.e<-projectExtent(wiCountyShp, pdStackRaw)
+wiShp.e<-projectExtent(wiTwnshpShp, pdStackRaw)
 # great now we have pdStackWI
 # now we can crop the pdStack data into our study extent
 pdStackWI<-terra::crop(pdStackRaw, wiShp.e)
 # first let's get these into the same CRS
-wiTwnshpSpat<-project(as(wiTwnshpShp, "SpatVector"), crs(wiCountyShp))
+wiTwnShpSpat<-project(as(wiTwnshpShp, "SpatVector"), crs(wiCountyShp))
 # get the spat data into the same CRS
-wiTwnshpSpat<-as(wiTwnshpShp, "Spatial")
+wiTwnShpSpat<-as(wiTwnshpShp, "Spatial")
 cumPPT <- 0
 wsi.mat <- matrix(0, nrow = nrow(wiTwnshpShp), ncol=length(years))
 k<-1
@@ -393,6 +426,8 @@ for(i in 1:(length(years)-1)){
   # note can use prism_archive_verify
   # or prism_archive_clean
   # maybe need to change this to iterate over each day
+  solarRad <- pd_stack(prism_arch("Soltotal",
+                                            "normal"))
   pptRaw<-pd_stack(prism_archive_subset("ppt",
                                         "daily",
                                          minDate=minDate,
@@ -409,13 +444,13 @@ for(i in 1:(length(years)-1)){
   tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
   tminWI <- terra::crop(tminRaw, wiShp.e)
   ppt_by_twnshp <- terra::extract(pptWI,
-                                wiTwnshpSpat,
+                                wiTwnShpSpat,
                                 method="bilinear")
   tmax_by_twnshp <- terra::extract(tmaxWI,
-                                wiTwnshpSpat,
+                                wiTwnShpSpat,
                                 method="bilinear")
   tmin_by_twnshp <- terra::extract(tminWI,
-                                wiTwnshpSpat,
+                                wiTwnShpSpat,
                                 method="bilinear")
     # index for the current day
     k <- 1
@@ -430,13 +465,14 @@ for(i in 1:(length(years)-1)){
              any(is.null(pptVals), is.null(tminVals), is.null(tmaxVals)))){
           # note that PRISM data is reported in MM; 
           # average ppt for a given township for day k
-          avgPPT <- mean(pptVals) / 10 # need CM divide by 10
+          avgPPT <- mean(pptVals, na.rm=TRUE) / 10 # need CM divide by 10
           # average min. temp for a given township for day k 
           avgTMin <- mean(tminVals) 
           avgTMax <- mean(tmaxVals)
           avgTmp <- mean(c(tminVals, tmaxVals))
       if(avgPPT > 0 & avgTmp <= 0){
         cumPPT = cumPPT + avgPPT
+        
       }
       # snow on the ground but above freezing
         
@@ -484,7 +520,7 @@ tminThrshld <- -17.7 # number used by MNDNR
 tmaxThrshld <- 0
 pptThrshld <- 38 # 38 cm cited
 # can set our month condition here for different measures of WSI
-earlySeasonStartDay<- '12-01' # november 1
+earlySeasonStartDay<- '12-01' # dec 1
 earlySeasonEndDay <- '1-31' # may 10
 minDay <- '12-01' # December 1
 maxDay <- '04-30' # April 30
@@ -518,8 +554,6 @@ for(i in 1:(length(years)-1)){
   earlySeasonInterval<- abs(as.double(as.Date(as.character(earlySeasonStartDate), format="%Y-%m-%d")-
           as.Date(as.character(earlySeasonEndDate), format="%Y-%m-%d")))
  
-  #if(exists)
-  
   # note can use prism_archive_verify
   # or prism_archive_clean
   # maybe need to change this to iterate over each day
@@ -604,12 +638,12 @@ pptThrshld <- 38 # 38 cm cited
 # can set our month condition here for different measures of WSI
 minDay <- '12-01' # December 1
 maxDay <- '04-30' # April 30
-years<-c(seq(2001,2021,1))
+years<-c(seq(2000,2021,1))
 # years.s<-c(seq(2001, 2002, 1))
 # DON'T DELETE; only for getting 
-pdStackRaw<-pd_stack(prism_archive_subset("ppt",
-                                          "monthly",
-                                          years=2001))
+#pdStackRaw<-pd_stack(prism_archive_subset("ppt",
+#                                          "monthly",
+#                                          years=2001))
 # now we need to reproject these into the same CRS
 wiShp.e<-projectExtent(wiTwnshpShp, pdStackRaw)
 # great now we have pdStackWI
@@ -685,3 +719,221 @@ for(i in 1:(length(years)-1)){
 }
 write.table(wsi.mat.ppt, "./wsiMatPPT")
 ```
+
+```{r snowpack continuous}
+minDay <- '12-01' # December 1
+maxDay <- '04-30' # April 30
+tminThrshld <- -17.7 # number used by MNDNR
+tmaxThrshld <- 0
+pptThrshld <- 38 # 38 cm cit
+earlySeasonStartDay<- '12-01' # dec 1
+earlySeasonEndDay <- '1-31' # may 10
+years<-c(seq(2000,2022,1))
+# years.s<-c(seq(2001, 2002, 1))
+# DON'T DELETE; only for getting 
+pdStackRaw<-pd_stack(prism_archive_subset("ppt",
+                                           "daily",
+                                           years=2000))
+# now we need to reproject these into the same CRS
+wiShp.e<-projectExtent(wiTwnshpShp, pdStackRaw)
+
+# now grab our solar raster for each month
+
+# m12 <- raster("D:\\prism-solar\\PRISM_soltotal_30yr_normal_4kmM3_12_bil\\PRISM_soltotal_30yr_normal_4kmM3_12_bil.bil") # december
+# m1<- raster("D:\\prism-solar\\PRISM_soltotal_30yr_normal_4kmM3_01_bil\\PRISM_soltotal_30yr_normal_4kmM3_01_bil.bil") # january
+# m2<- raster("D:\\prism-solar\\PRISM_soltotal_30yr_normal_4kmM3_02_bil\\PRISM_soltotal_30yr_normal_4kmM3_02_bil.bil") # february
+# m3<-raster("D:\\prism-solar\\PRISM_soltotal_30yr_normal_4kmM3_03_bil\\PRISM_soltotal_30yr_normal_4kmM3_03_bil.bil") # march
+# m4<-raster("D:\\prism-solar\\PRISM_soltotal_30yr_normal_4kmM3_04_bil\\PRISM_soltotal_30yr_normal_4kmM3_04_bil.bil") # april
+
+# first let's get these into the same CRS
+wiTwnShpSpat<-as(wiTwnshpShp, "Spatial")
+
+# get the spat data into the same CRS
+wiTwnShpSpat<-spTransform(wiTwnShpSpat, crs(wiShp))
+cumPPT <- 0
+
+# wsi snopack only
+wsi.mat.ppt <- as.data.frame(matrix(0, nrow = nrow(wiTwnshpShp),
+                                    ncol=length(years)))
+wsi.mat.ppt$uid <- wiTwnShpSpat$uid
+names(wsi.mat.ppt) <- c(as.character(years), "uid")
+wsi.mat.ppt<-wsi.mat.ppt[,c(ncol(wsi.mat.ppt),seq(2:(ncol(wsi.mat.ppt)-1)))] # switch order
+
+# wsi temperature only
+wsi.mat.temp <- as.data.frame(matrix(0, nrow = nrow(wiTwnshpShp),
+                                    ncol=length(years)))
+wsi.mat.temp$uid <- wiTwnShpSpat$uid
+names(wsi.mat.temp) <- c(as.character(years), "uid")
+wsi.mat.temp<-wsi.mat.temp[,c(ncol(wsi.mat.temp),seq(2:(ncol(wsi.mat.temp)-1)))] # switch order
+
+# gets the max snowpack for a given township
+snopack.max <- as.data.frame(matrix(0, nrow = nrow(wiTwnshpShp),
+                                    ncol=length(years)))
+snopack.max$uid <- wiTwnShpSpat$uid
+names(snopack.max) <- c(as.character(years), "uid")
+snopack.max<-snopack.max[,c(ncol(snopack.max),seq(2:(ncol(snopack.max)-1)))] # switch order
+
+# number of days with snowfall
+snowfall.days <- as.data.frame(matrix(0, nrow = nrow(wiTwnshpShp),
+                                    ncol=length(years)))
+snowfall.days$uid <- wiTwnShpSpat$uid
+ names(snowfall.days) <- c(as.character(years), "uid")
+snowfall.days<-snowfall.days[,c(ncol(snowfall.days),seq(2:(ncol(snowfall.days)-1)))] # switch order
+
+# ttl
+wsi.mat.ttl <- as.data.frame(matrix(0, nrow = nrow(wiTwnshpShp),
+                                    ncol=length(years)))
+wsi.mat.ttl$uid <- wiTwnShpSpat$uid
+
+names(wsi.mat.ttl) <- c(as.character(years), "uid")
+wsi.mat.ttl<-wsi.mat.ttl[,c(ncol(wsi.mat.ttl),seq(2:(ncol(wsi.mat.ttl)-1)))] # switch order
+
+# early
+wsi.mat.early <- as.data.frame(matrix(0, nrow = nrow(wiTwnshpShp),
+                                    ncol=length(years)))
+wsi.mat.early$uid <- wiTwnShpSpat$uid
+names(wsi.mat.early) <- c(as.character(years), "uid")
+wsi.mat.early<-wsi.mat.early[,c(ncol(wsi.mat.early),seq(2:(ncol(wsi.mat.early)-1)))] # switch order
+
+# late
+wsi.mat.late <- as.data.frame(matrix(0, nrow = nrow(wiTwnshpShp),
+                                    ncol=length(years)))
+wsi.mat.late$uid <- wiTwnShpSpat$uid
+
+names(wsi.mat.late) <- c(as.character(years), "uid")
+wsi.mat.late<-wsi.mat.late[,c(ncol(wsi.mat.late),seq(2:(ncol(wsi.mat.late)-1)))]
+# switch order
+
+
+wsi.mat.late <- as.data.frame(matrix(0, nrow = nrow(wiTwnshpShp),
+                                    ncol=length(years)))
+wsi.mat.late$uid <- wiTwnShpSpat$uid
+
+names(wsi.mat.late) <- c(as.character(years), "uid")
+wsi.mat.late<-wsi.mat.late[,c(ncol(wsi.mat.late),seq(2:(ncol(wsi.mat.late)-1)))]
+
+# variability in snopack
+ppt.var <- as.data.frame(matrix(0, nrow = nrow(wiTwnshpShp),
+                                    ncol=length(years)))
+ppt.var$uid <- wiTwnShpSpat$uid
+
+names(ppt.var) <- c(as.character(years), "uid")
+ppt.var<-ppt.var[,c(ncol(ppt.var),seq(2:(ncol(ppt.var)-1)))]
+
+# number of snopack days
+
+# number of days with no snow on ground
+snopack.zero <- as.data.frame(matrix(0, nrow = nrow(wiTwnshpShp),
+                                    ncol=length(years)))
+snopack.zero$uid <- wiTwnShpSpat$uid
+names(snopack.zero) <- c(as.character(years), "uid")
+snopack.zero<-snopack.zero[,c(ncol(snopack.zero),seq(2:(ncol(snopack.zero)-1)))]
+
+k<-1
+for(i in 1:(length(years)-1)){
+  minDate <- paste0(years[i], "-", minDay)
+  maxDate <- paste0(years[i] + 1, "-", maxDay)
+  # seasonal
+  earlySeasonStartDate <- paste0(years[i], "-", earlySeasonStartDay)
+  earlySeasonEndDate <- paste0(years[i] + 1, "-", earlySeasonEndDay)
+  earlySeasonInterval<- abs(as.double(as.Date(as.character(earlySeasonStartDate), format="%Y-%m-%d")-
+          as.Date(as.character(earlySeasonEndDate), format="%Y-%m-%d")))
+
+  pptRaw<-pd_stack(prism_archive_subset("ppt",
+                                        "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tmaxRaw<-pd_stack(prism_archive_subset("tmax",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  tminRaw<-pd_stack(prism_archive_subset("tmin",
+                                         "daily",
+                                         minDate=minDate,
+                                         maxDate=maxDate))
+  pptWI <- terra::crop(pptRaw, wiShp.e)
+  tmaxWI<- terra::crop(tmaxRaw, wiShp.e)
+  tminWI <- terra::crop(tminRaw, wiShp.e)
+  ppt_by_twnshp <- terra::extract(pptWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmax_by_twnshp <- terra::extract(tmaxWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+  tmin_by_twnshp <- terra::extract(tminWI,
+                                wiTwnShpSpat,
+                                method="bilinear")
+    # index for the current day
+    k <- 1
+    # # get number of days in each month
+    # daysm12 <- lubridate::days_in_month(as.Date(minDate, "%Y-%m-%d"))
+    # daysm1 <- lubridate::days_in_month(as.Date(paste0(year[i] + 1,"-", '01',"-", "01"), "%Y-%m-%d"))
+    # daysm2 <- lubridate::days_in_month(as.Date(paste0(year[i] + 1,"-", '02',"-", "01"), "%Y-%m-%d"))
+    # daysm3 <- lubridate::days_in_month(as.Date(paste0(year[i] + 1,"-", '03',"-", "01"), "%Y-%m-%d"))
+    # daysm4 <- lubridate::days_in_month(as.Date(maxDate, "%Y-%m-%d"))
+    for(j in 1:length(ppt_by_twnshp)){
+      cumPPT_vec <- c()
+      for(k in 1:length(ppt_by_twnshp[[j]][1,])){
+        # need to check if any of the values are NA
+
+        pptVals<-as.vector(ppt_by_twnshp[[j]][,k])
+        tminVals<-as.vector(tmin_by_twnshp[[j]][,k])
+        tmaxVals<-as.vector(tmax_by_twnshp[[j]][,k])
+        # note that PRISM data is reported in MM; need CM divide by 10
+        avgPPT <- mean(pptVals,na.rm=TRUE) / 10 # average ppt for a given township for day k
+        avgTmp <- mean(c(tminVals, tmaxVals),na.rm=TRUE)
+        avgTMin <- mean(tminVals, na.rm=TRUE) 
+        avgTMax <- mean(tmaxVals, na.rm=TRUE)
+        if(avgPPT > 0 & avgTmp <= tmaxThrshld){
+            cumPPT = cumPPT + avgPPT
+            snowfall.days[j,i + 1] <- snowfall.days[j,i + 1] + 1
+        }
+        # check thresholds
+        if(cumPPT > snopack.max[j,i+1]){
+          snopack.max[j,i+1] <- cumPPT 
+        }
+        if(cumPPT == 0){
+          snopack.zero[j,i+1] <- snopack.zero[j,i+1] + 1
+        }
+        if(cumPPT > 0 & avgTmp > tmaxThrshld){
+          # using DDF formula from Zhang et al. 2021
+          # never let cumPPT go below zero
+          cumPPT = max(cumPPT - avgTmp, 0) # some melt factor update later with lit found
+        }
+        cumPPT_vec[k] <- cumPPT
+        if(cumPPT > pptThrshld & (avgTMin < tminThrshld)){
+          wsi.mat.temp[j,i+1] <- wsi.mat.temp[j,i+1] + 1
+          wsi.mat.ppt[j,i+1] <- wsi.mat.ppt[j,i+1] + 1
+          wsi.mat.ttl[j,i+1] <- wsi.mat.ttl[j,i+1] + 2
+          wsi.mat.late[j,i+1] <- if_else(k > earlySeasonInterval,wsi.mat.late[j,i+1] + 2, wsi.mat.late[j,i+1])
+          wsi.mat.early[j,i+1] <- if_else(k <= earlySeasonInterval,wsi.mat.early[j,i+1] + 2, wsi.mat.early[j,i+1])
+        }
+        if(cumPPT < pptThrshld & avgTMin < tminThrshld){
+          wsi.mat.temp[j,i+1] <- wsi.mat.temp[j,i+1] + 1
+          wsi.mat.ttl[j,i+1] <- wsi.mat.ttl[j,i+1] + 1
+          wsi.mat.late[j,i+1] <- if_else(k > earlySeasonInterval,wsi.mat.late[j,i+1] + 1, wsi.mat.late[j,i+1])
+          wsi.mat.early[j,i+1] <- if_else(k <= earlySeasonInterval,wsi.mat.early[j,i+1] + 1, wsi.mat.early[j,i+1])
+        }
+        if(cumPPT < pptThrshld & avgTMin < tminThrshld){
+          wsi.mat.ttl[j,i+1] <- wsi.mat.ttl[j,i+1] + 1
+          wsi.mat.late[j,i+1] <- if_else(k > earlySeasonInterval,wsi.mat.late[j,i+1] + 1, wsi.mat.late[j,i+1])
+          wsi.mat.early[j,i+1] <- if_else(k <= earlySeasonInterval,wsi.mat.early[j,i+1] + 1, wsi.mat.early[j,i+1])
+        }
+      }
+    cumPPT <- 0
+    ppt.var[j,i+1] <- var(cumPPT_vec,na.rm=TRUE)
+    }
+}
+```
+```{r}
+write.table(ppt.var,"./data/pptvar")
+write.table(wsi.mat.early, "./data/wsi.mat.early")
+write.table(wsi.mat.late, "./data/wsi.mat.late")
+write.table(wsi.mat.ttl, "./data/wsi.mat.ttl")
+write.table(snopack.zero, "./data/snopack.zero")
+write.table(snopack.max, "./data/snopack.max")
+write.table(wsi.mat.temp, "./data/wsi.mat.temp")
+write.table(wsi.mat.ppt, "./data/wsi.mat.ppt")
+```
+
+

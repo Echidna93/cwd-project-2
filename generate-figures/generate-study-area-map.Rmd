@@ -1,0 +1,191 @@
+---
+title: "generate-map"
+author: "alex jack"
+date: "2024-01-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(maps)
+library("rgdal")
+library(ggplot2)
+library(dplyr)
+```
+
+```{r, read in WIDat}
+WIDat<-read.table(
+  "./data/WIData.csv",
+  sep=",", header=TRUE)
+
+WIDatClean5<-read.table("./data/WITimeSeriesDat-4-16-24")
+wiCountyShp <- st_read("./data/shapefiles/County_Boundaries_24K/County_Boundaries_24K.shp")
+```
+
+```{r generate study townships map}
+# usaCounty = map_data('county')
+# wiCounty = subset(usaCounty, usaCounty$region == "wisconsin")
+# # Wisconsin
+# wiStudyCounties <- WIDat %>% select(County) %>% unique()
+# wiCountyStudy <- subset(wiCounty, wiCounty$subregion %in% tolower(wiStudyCounties$County))
+# 
+# wiBase <- ggplot(data=wiCounty, mapping=aes(x=long, y=lat, group=group)) +
+#   coord_fixed(1.3) +
+#   geom_polygon(color="black", fill="white")
+# 
+# wiTwnshpStudyL <- wiTwnshpStudy %>% st_transform("+proj=longlat")
+# 
+# wiBase + theme_void() +
+#   geom_polygon(data=wiTwnshpStudy, color="black", fill=NA) +
+#   geom_polygon(data=wiTwnshpStudy, aes(fill="red")) +
+#   geom_path(color="black") +
+#   scale_fill_discrete(name="Study Counties", labels="") + 
+#   ggtitle("Study Counties in Wisconsin, USA") +
+#   theme(plot.title = element_text(hjust = 0.5))
+
+ 
+ggplot(data=wiTwnshpShp) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black")) + # get rid of grey background
+  geom_sf() + 
+  geom_sf(data=wiTwnshpStudy, aes(fill="red"))+ 
+  scale_fill_discrete(name="Study Townships", labels="") + 
+  ggtitle("Study Townships in Wisconsin, USA") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r generate map of cv vals}
+for(i in 1:nrow(wiTwnshpShp)){
+ for(j in 1:nrow(wiStudyShp)){
+  if(wiTwnshpShp[i,]$uid == wiStudyShp[j,]$uid){
+    wiTwnshpShp[i,]$cv.diff <- wiStudyShp[j,]$cv.diff
+  }
+ }
+  wiTwnshpShp$cv.diff <- NA # outside of study area
+}
+wiTwnshpShp2<-merge(wiTwnshpShp, hsiDat, on.x="uid", on.y="uid", all.x=TRUE)
+ggplot(data=wiTwnshpShp2) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black")) + # get rid of grey background
+  geom_sf(aes(fill=fd.diff))+ 
+  ggtitle("Cover Values Based on Neighborhood Structure WI, USA") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r generate winter severity plot}
+# these are grabbed from the WDNR website (https://apps.dnr.wi.gov/deermetrics/DeerStats.aspx?R=WSI)
+# exracted values from images using this website https://brandfolder.com/workbench/extract-text-from-image
+# used snipping tool builtin on windows
+wsi.2012 <- c(21,23,23,21,22,21,18,14,15,12,14,20,22,21,22,17,14,14,11,16,17,19,15,15,16,19,16,13,10,12,13,13,12,9,6,13,12,9,8,7,5)
+
+wsi.2013 <- c(69,72,74,90,98,86,57,58,57,53,55,62,71,70,68,59,60,54,48,57,58,58,59,54,55,54,55,53,49,45,53,52,50,47,44,37,50,48,46,42,42,40)
+
+wsi.2014 <- c(34,34,35,35,37,35,30,33,35,34,34,33,28,29,27,32,33,32,33,31,27,25,31,31,31,30,30,28,24,30,30,29,29,26,26,22,30,28,27,25,24,25)
+wsi.2015 <- c(15,15,16,15,15,15,14,16,16,15,13,13,12,15,15,15,15,15,13,11,14,14,15,14,12,12,9,12,13,12,11,11,10,11,11,10,10,10,9)
+wsi.2016 <- c(17,19,21,18,20,19,13,16,18,17,17,16,13,13,12,15,16,15,15,15,11,9,11,13,14,13,12,11,9,12, 11,11,10,10,8,11,11,10,9,9,8)
+
+wsi.2017 <-c(31,33,33,32,32,30,25,28,31,30,29,28,25,25,22,26,28,26,28,27,24,22,25,26,25,25,25,24,20,25,25,24,24,22,18,25,24,24,21,20,19)
+wsi.2018 <- c(44,48,50,48,50,44,32,37,45,42,36,35,30,31,32,37,34,32,31,30,27,24,29,31,29,28,25,22,21,27,26,23,21,19,17,27,22,21,19,16,15)
+wsi.2019 <- c(21,22,23,19,20,20,15,19,20,17,16,13,10,9,17,15,13,13,12,8,11,13,12,10,6,9,7,5,10,10,8,5,5,5,10,8,6,5,4,4)
+wsi.2020 <- c(21,22,22,20,20,20,18,22,21,20,21,20,17,17,15,22,20,21,20,20,17.16,20,21,21,20,18,17,22,20,20,18,19,25,25,22,18,18,16)
+wyShp<-st_transform(wiCountyShp, st_crs(wiTwnshpStudy))
+wiTwnshpShp <- wiTwnshpShp %>% mutate(uid = paste0(TWP, "-", RNG, "-", DIR_ALPHA))
+wiCountyTwnshps <- st_intersection(wiCountyShp, wiTwnshpStudy)
+wiCountyTwnshps<-wiCountyTwnshps %>% filter(!is.na(uid))
+
+wsi.dat <- wsi.dat %>% filter(V1 %in% wiTwnshpStudy$uid)
+wsi.annual.dat <- data.frame(matrix(nrow=1, ncol=length(seq(2001:2020))))
+names(wsi.annual.dat) <- c(seq(2001:2020))
+for(i in 1:ncol(wsi.dat)){
+  wsi.dat[,i] <- as.numeric(wsi.dat[,i])
+  wsi.annual.dat[1,i] <- mean(wsi.dat[,i])
+}
+names(wsi.dat) <- c("uid", seq(2001,2020,1))
+wsi.dat <- melt(wsi.dat, id.var="uid")
+names(wsi.dat) <- c("uid", "year", "wsi")
+wsi.dat$wsi <- as.numeric(wsi.dat$wsi)
+wsiout<-cbind(wsi.dat.annual[12:16,20, rbind(mean(wsi.2012), mean(wsi.2013), mean(wsi.2014), mean(wsi.2015), mean(wsi.2016)))
+,mean(wsi.2017), mean(wsi.2018),mean(wsi.2019),mean(wsi.2020).daout$year <- seq(2012,2020,1)
+names(out) <- c("prism", "wdnr", "year")
+colors <- c("prism" = "red", "wdnr"="blue")
+ggplot(out, aes(x=year)) +
+  geom_line(aes(color="prism", y=prism)
+ +
+  geom_line(aes(color="wdnr", y=wdnr)) +
+  scale_color_manual(values=colors) +
+  ylab("WSI") + 
+    ggtitle("Average Winter Severity Index (WSI) for Study Area") +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"),
+legend.position = c(0.8, 0.87), legend.title = element_blank())
+```
+```{r creat plots for WSI by township?}
+# plot WSI countywide
+wsiMast <- wsiMast %>% filter(name %in% unique(WIDat$County))
+wsiMast <- wsiMast[,-c(1:4)]
+wsiMast <- wsiMast[,-c(ncol(wsiMast))]
+matplot(t(wsiMast), type="l", main="Winter Severity Index (WSI) from WSI From WIDot", xlab="Year", ylab="WSI")
+wiTwnshpShpWSI <- inter
+matplot(t(wsiMat), type="l", main="Calculated Winter Severity Index (WSI) from Prism Data Winter", xlab="Year", ylab="WSI")
+
+wiCountyShp<-st_transform(wiCountyShp, st_crs(wiTwnshpShpWSI)) # project to same CRS
+# get the uid field I use to get unique townshps
+wiTwnshpShp <- wiTwnshpShp %>% mutate(uid = paste0(TWP, "-", RNG, "-", DIR_ALPHA))
+# get the intersection
+wiCountyTwnshps <- st_intersection(wiCountyShp, wiTwnshpShpWSI)
+wiCountyTwnshps <- wiCountyTwnshps %>% filter(!duplicated(wiCountyTwnshps$uid))
+wiCountyShps <- wiCountyTwnshps %>% group_by(COUNTY_NAM) %>% mutate(cV1 = mean(V1), cV2 = mean(V2), cV3 = mean(V3), cV4 = mean(V4), cV5 = mean(V5), cV6 = mean(V6), cV7 = mean(V7), cV8 = mean(V8), cV9 = mean(V9), cV10 = mean(V10), cV11 = mean(V11), cV12 = mean(V12), cV13 = mean(V13), cV14 = mean(V14), cV15 = mean(V15), cV16 = mean(V16), cV17 = mean(V17), cV18 = mean(V18), cV19 = mean(V19), cV20 = mean(V20))
+wiCountyShps <- wiCountyShps %>% select(COUNTY_FIP,cV1, cV2, cV3, cV4, cV5, cV6, cV7, cV8, cV9, cV10, cV11, cV12, cV13, cV14, cV15, cV16, cV17, cV18, cV19,cV20) # get rid of duplicates
+wiCountyShps <- wiCountyShps %>% filter(!duplicated(COUNTY_FIP))
+wsiMatCountyAvg <- cbind(
+  wiCountyShps$cV1,
+  wiCountyShps$cV2,
+  wiCountyShps$cV3,
+  wiCountyShps$cV4,
+  wiCountyShps$cV5,
+  wiCountyShps$cV5,
+  wiCountyShps$cV6,
+  wiCountyShps$cV7,
+  wiCountyShps$cV8,
+  wiCountyShps$cV9,
+  wiCountyShps$cV10,
+  wiCountyShps$cV11,
+  wiCountyShps$cV12,
+  wiCountyShps$cV13,
+  wiCountyShps$cV14,
+  wiCountyShps$cV13,
+  wiCountyShps$cV15,
+  wiCountyShps$cV16,
+  wiCountyShps$cV17,
+  wiCountyShps$cV18,
+  wiCountyShps$cV19,
+  wiCountyShps$cV20
+)
+
+matplot(t(wsiMatCountyAvg), type="l")
+matplot(t(wsiMast), type="l")
+plot(nb)
+```
+
+```{r plot data by group and year}
+
+ggplot(WIDatClean5, aes(x=year, y=pos.prev, group=uid, color=uid)) +
+  geom_jitter(show.legend=FALSE) +  
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black")) + # get rid of grey background
+  ggtitle("Prevalence By Township and Year") +
+  theme(plot.title = element_text(hjust = 0.5))+
+        ylab("Prevalence per 1000 Samples") +
+  xlab("Year")
+
+
+ggplot(WIDatClean5, aes(x=year, y=nSamp, group=uid,color=uid)) +
+  geom_jitter(show.legend=FALSE) +  
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black")) + # get rid of grey background
+  ggtitle("Sampling Effort By Township and Year") +
+  theme(plot.title = element_text(hjust = 0.5)) +         
+  ylab("Number of Samples") +
+  xlab("Year")
+```
+
+

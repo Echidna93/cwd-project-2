@@ -25,12 +25,27 @@ library(raster)
 ```
 ```{r download prism data}
 # only run this if the prism data directory gets deleted
-prism_set_dl_dir('C:\\Users\\jackx\\Desktop\\prism-dat-f') # only set to create =TRUE if we need to download again
-get_prism_dailys(type="tmax",
-                 minDate="2006-11-01",
-                 maxDate="2022-05-31",
-                 keepZip = TRUE)
-
+prism_set_dl_dir('D:\\prism-dat-f') # only set to create =TRUE if we need to download again
+get_prism_dailys(
+   type = "tmean",
+   minDate = "2001-12-01",
+   maxDate = "2022-04-30",
+   keepZip=TRUE)
+get_prism_dailys(
+   type = "ppt", 
+   minDate = "2000-12-01", 
+   maxDate = "2001-12-01", 
+   keepZip = TRUE)
+get_prism_dailys(
+   type = "tmax",
+   minDate = "2000-12-01",
+   maxDate = "2000-12-30",
+   keepZip=TRUE)
+get_prism_dailys(
+   type = "tmin",
+   minDate = "2000-12-01",
+   maxDate = "2001-12-01",
+   keepZip=TRUE)
 
 ```
 

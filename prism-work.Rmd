@@ -105,198 +105,7 @@ WIDatClean5<-read.table("./data/WITimeSeriesDat-3-14-24")
 
 #write.table(wsi.mat2, "./data/wsiDatnztwnshplong")
 wsi.mat.nz.long <- read.table("./data/wsiDatnztwnshplong")
-```
-
-```{r regress populations}
-
-
-
-
-```
-
-```{r,}
-wiTwnshpShp$uid <- paste0(wiTwnshpShp$TWP, "-", wiTwnshpShp$RNG, "-", wiTwnshpShp$DIR_ALPHA)
-# subtract the ones that aren't in wiTwnshpShp
-# cwd.dat.pos <- cwd.dat.pos[-c(which(!c(cwd.dat.pos$uuid) %in% c(wiTwnshpShp$uid))),]
-# cwd.dat.analyzed <- cwd.dat.analyzed[-c(which(!c(cwd.dat.aiodnalyzed$uuid) %in% c(wiTwnshpShp$uid))),]
-
-
-wiTwnshpShpWSI <- cbind(wiTwnshpShp, wsi.mat)
-wiTwnshpShpWSI <- wiTwnshpShpWSI %>% filter(uid %in% unique((posDat$twnshp)))
-#popDatTwnshp <- popDatTwnshp %>% filter(uid %in% unique((posDat$twnshp)))
-posDatMale <- posDatMale %>% filter(twnshp %in% unique((posDat$twnshp)))
-posDatFemale <- posDatFemale %>% filter(twnshp %in% unique((posDat$twnshp)))
-sampDatFemale <- sampDatFemale %>% filter(twnshp %in% unique((posDat$twnshp)))
-sampDatMale <- sampDatMale %>% filter(twnshp %in% unique((posDat$twnshp)))
-
-sampDat<-data.frame(twnshp=sampDatFemale$twnshp)
-for(i in 1:nrow(sampDatMale)){
-  for(j in 1:ncol(sampDatMale)){
-    
-  }
-}
-sampDat[,1] <- sampDatFemale[,1]
-sampDat[,2:ncol(sampDatFemale)]<-sampDatFemale[,2:ncol(sampDatFemale)]+sampDatMale[,2:ncol(sampDatFemale)]
-wiTwnshpShp<-wiTwnshpShp%>% filter(uid %in% nztwnshps[,1])
-write.table(nonzerotwnshps, "./data/nonzerotwnps")
-nztwnshps<-read_file("./data/nonzerotwnps.txt")
-wiStudyShpPoly <- as(wiTwnshpShp, "Spatial")
-W.nb <- poly2nb(wiStudyShpPoly)
-W <- nb2WB(W.nb)
-bad.indx<-which(W$num== 0)
-wiTwnshpShp <- wiTwnshpShp[-c(bad.indx),]
-
-write.table(wiTwnshpShp.nz, "./data/wiTwnshpnz")
-WITimeSeries3 <- WITimeSeries2 %>% filter(WITimeSeries2$uid %in% wiTwnshpShp.nz$uid)
-WITimeSeries3 <- WITimeSeries3 %>% filter(!(WITimeSeries3$year %in% c("1999-2001", "2022")))
-WITimeSeries3<- WITimeSeries3 %>% arrange(year,uid)
-wiTwnshpShpWSI <- wiTwnshpShpWSI %>% arrange(uid)
-wiTwnshpShp <- wiTwnshpShp[-c(bad.indx),]
-wiTwnshpShpWSI <- wiTwnshpShpWSI %>% filter(uid %in% wiTwnshpShp.nz$uid)
-
-
-
-# 
-
-#wiStudyShp <-wiTwnshpShpWSI[-c(which(!c(wiTwnshpShpWSI$uid) %in% c(cwd.dat.pos$uuid))),]
-# arrange everything
-wiTwnshpShp<-wiTwnshpShp %>% arrange(uid)
-
-
-posDat <- posDat %>% arrange(twnshp)
-sampDat <- sampDat %>% arrange(twnshp)
-#popDatTwnshp <- popDatTwnshp %>% arrange(uid)
-posDatMale <- posDatMale %>% arrange(twnshp)
-posDatFemale <- posDatFemale %>% arrange(twnshp)
-sampDatFemale <- sampDatFemale %>% arrange(twnshp)
-sampDatMale <- sampDatMale %>% arrange(twnshp)
-
-wsi.mat <- as.data.frame(cbind(
-  wiStudyShp$uid,
-  wiStudyShp$V1,
-  wiStudyShp$V2,
-  wiStudyShp$V3,
-  wiStudyShp$V4,
-  wiStudyShp$V5,
-  wiStudyShp$V6,
-  wiStudyShp$V7,
-  wiStudyShp$V8,
-  wiStudyShp$V9,
-  wiStudyShp$V10,
-  wiStudyShp$V11,
-  wiStudyShp$V12,
-  wiStudyShp$V13,
-  wiStudyShp$V14,
-  wiStudyShp$V15,
-  wiStudyShp$V16,
-  wiStudyShp$V17,
-  wiStudyShp$V18,
-  wiStudyShp$V19,
-  wiStudyShp$V20
-))
-
-#remove uid columns
-posDat <- posDat[,-1]
-sampDat <- sampDat[,-1]
-
-posDatMale <- posDatMale[,-1]
-sampDatMale <- sampDatMale[,-1]
-posDatFemale <- posDatFemale[,-1]
-sampDatFemale <- sampDatFemale[,-1]
-
-# remove the first x cols of wsi mat; delete when I get full pop data
-# wsi.mat <- wsi.mat[,-c(1:4)]
-
-popDatTwnshp <- popDatTwnshp[,-1]
-# convert everything to matrix form
-wsiMat <- matrix(0,nrow(posDatMale), ncol(posDatMale))
-popMat <- matrix(0,nrow(posDatMale), ncol(posDatMale))
-posMat <- matrix(0,nrow(posDatMale), ncol(posDatMale))
-sampMat <- matrix(0,nrow(posDatMale), ncol(posDatMale))
-
-posMatMale <- matrix(0,nrow(posDatMale), ncol(posDatMale))
-sampMatMale <- matrix(0,nrow(posDatMale), ncol(posDatMale))
-
-posMatFemale <- matrix(0,nrow(posDatMale), ncol(posDatMale))
-sampMatFemale <- matrix(0,nrow(posDatMale), ncol(posDatMale))
-
-for(i in 1:nrow(posDat)){
-  for(j in 1:ncol(posDatFemale)){
-    #popMat[i,j] <- popDatTwnshp[i,j]
-    #posMat[i,j] <- posDat[i,j]
-    #sampMat[i,j]<- sampDat[i,j] 
-    wsiMat[i,j] <- wsi.mat[i,j]
-    posMatMale[i,j] <- posDatMale[i,j]
-    sampMatMale[i,j] <- sampDatMale[i,j]
-    posMatFemale[i,j] <- posDatFemale[i,j]
-    sampMatFemale[i,j] <- sampDatFemale[i,j]
-  }
-}
-# remove missing vals from popMat
-badIndex <- c()
-j <- 1
-# for(i in 1:nrow()){
-#   if(any(is.na(popMat[i,]))){
-#     badIndex[j] <- i
-#     j <- j + 1
-#   }
-# }
-# 
-# popMat<- popMat[-c(badIndex),]
-# posMat <- posMat[-c(badIndex),]
-# sampMat<- sampMat[-c(badIndex),] 
-# wsiMat<- wsiMat[-c(badIndex),]
-# 
-# posMatMale[i,j] <- posMatMale[-c(badIndex),]
-# sampMatMale[i,j] <- sampMatMale[-c(badIndex),]
-# posMatFemale[i,j] <- posMatFemale[-c(badIndex),]
-# sampMatFemale[i,j] <- sampMatFemale[-c(badIndex),]
-# 
-# wiStudyShp <- wiStudyShp[-c(badIndex),]
-# 
-# densMat <- matrix(0, nrow(popMat), ncol(popMat))
-for(i in 1:nrow(densMat)){
-  for(j in 1:ncol(densMat)){
-    densMat[i,j] <- popMat[i,j] / wiStudyShp[i,]$AREA
-  }
-}
-
-
-# create neighborhood matrix
-wiStudyShpPoly <- as(wiTwnshpShp, "Spatial")
-W.nb <- poly2nb(wiStudyShpPoly)
-W <- nb2WB(W.nb)
-W.listw<-nb2listw(W.nb, style="W")
-wCarCM<-as.carCM(W$adj, W$weights, W$num)
-# cwd.dat.analyzed <- cwd.dat.analyzed[,-1]
-# cwd.mat.pos <- matrix(0, nrow=nrow(cwd.dat.pos), ncol=ncol(cwd.dat.pos))
-# cwd.mat.analyzed <- matrix(0, nrow=nrow(cwd.dat.analyzed), ncol=ncol(cwd.dat.analyzed))
-# for(i in 1:nrow(cwd.mat.pos)){
-#   for(j in 1:ncol(cwd.mat.pos)){
-#     cwd.mat.analyzed[i,j] <- as.numeric(cwd.dat.analyzed[i,j])
-#     cwd.mat.pos[i,j] <- as.numeric(cwd.dat.pos[i,j])
-#     }
-# }
-
-data1<-posMat
-data2<-wsiMat
-data3<-sampMat
-df_list <- map(paste0("data",1:3),~eval(sym(.x))) # can use this for male female later
-map(df_list, ~polr())
-zeroinfl(df_list[[1]]~df_list[[2]] + df_list[[3]], data=df_list)
-overallRate <- sum(posMat)/sum(sampMat)
-
-
-wsiScaled <- matrix(0, nrow(wsiMat),ncol(wsiMat))
-for(i in 1:nrow(wsiMat)){
-  wsiScaled[i,] <- scale(wsiMat[i,])
-}
-posMat <- posMatMale + posMatFemale
-sampMat <- sampMatMale + sampMatFemale
-popMatScaled <- scale(popMat)
-posMatMaleScaled <- scale(posMat)
-
-
+read.table()
 ```
 
 ```{r assess temporal autocorrelation}
@@ -339,12 +148,18 @@ for(i in 1:ncol(totalMat)){
   timeSeriesF[i] <- sum(posMatFemale[1:nrow(posMatFemale),i])
   timeSeriesM[i] <- sum(posMatMale[1:nrow(posMatMale),i])
 }
+cwdYearDat <- data.frame(cwdCases=0,
+                         year=unique(WIDat.hunt.y$year))
+years<-unique(WIDat.hunt.y$year)
+for(i in 1:length(years)){
+cwdYearDat[i,]$cwdCases<-sum(WIDat.hunt.y[which(WIDat.hunt.y$year==years[i]),]$nPos, na.rm=TRUE)
+}
 
 acfT<-acf(timeSeries, type="correlation")
-pacfT<-acf(timeSeries, type="partial")
+pacfT<-acf(cwdYearDat$cwdCases, type="partial")
 # plot the objects
 plot(acfT,main="Autocorrelation of Observed (M/F) CWD Cases (2002-2020)")
-plot(pacfT,main="Partial Autocorrelation of Observed (M/F) CWD Cases (2002-2020)")
+plot(pacfT,main="Partial Autocorrelation of Observed CWD Cases (2008-2021)")
 
 
 
@@ -352,7 +167,7 @@ plot(pacfT,main="Partial Autocorrelation of Observed (M/F) CWD Cases (2002-2020)
 acfF<-acf(timeSeriesF, type="correlation")
 pacfF<-acf(timeSeriesF, type="partial")
 plot(acfF,main="Autocorrelation of observed CWD Cases for Females (2002-2020)")
-plot(acfF,main="Partial Autocorrelation of observed CWD Cases for Females (2002-2020)")
+plot(pacf,main="Partial Autocorrelation of observed CWD Cases for Females (2008-2021)")
 
 
 
@@ -361,209 +176,8 @@ pacfM<-acf(timeSeriesM, type="partial")
 plot(acfM,main="Autocorrelation of observed CWD Cases for Males (2002-2020)")
 plot(acfFT,main="Partial Autocorrelation of observed CWD Cases for Males (2002-2020)")
 ```
-```{r write carBayesST}
-
-wiTwnshpShp$uid <- paste0(wiTwnshpShp$TWP, "-", wiTwnshpShp$RNG, "-", wiTwnshpShp$DIR_ALPHA)
-# subtract the ones that aren't in wiTwnshpShp
-# cwd.dat.pos <- cwd.dat.pos[-c(which(!c(cwd.dat.pos$uuid) %in% c(wiTwnshpShp$uid))),]
-# cwd.dat.analyzed <- cwd.dat.analyzed[-c(which(!c(cwd.dat.analyzed$uuid) %in% c(wiTwnshpShp$uid))),]
-
-wiTwnshpShpWSI <- cbind(wiTwnshpShp, wsi.mat)
-wiTwnshpShpWSI <- wiTwnshpShpWSI %>% filter(uid %in% unique((cwdDat3$uid)))
-#popDatTwnshp <- popDatTwnshp %>% filter(uid %in% unique((posDat$twnshp)))
-posDatMale <- posDatMale %>% filter(twnshp %in% unique((posDat$twnshp)))
-posDatFemale <- posDatFemale %>% filter(twnshp %in% unique((posDat$twnshp)))
-sampDatFemale <- sampDatFemale %>% filter(twnshp %in% unique((posDat$twnshp)))
-sampDatMale <- sampDatMale %>% filter(twnshp %in% unique((posDat$twnshp)))
-
-#wiStudyShp <-wiTwnshpShpWSI[-c(which(!c(wiTwnshpShpWSI$uid) %in% c(cwd.dat.pos$uuid))),]
-# arrange everything
-wiStudyShp<-wiTwnshpShpWSI %>% arrange(uid)
-
-posDat <- posDat %>% arrange(twnshp)
-sampDat <- sampDat %>% arrange(twnshp)
-#popDatTwnshp <- popDatTwnshp %>% arrange(uid)
-posDatMale <- posDatMale %>% arrange(twnshp)
-posDatFemale <- posDatFemale %>% arrange(twnshp)
-sampDatFemale <- sampDatFemale %>% arrange(twnshp)
-sampDatMale <- sampDatMale %>% arrange(twnshp)
-
-
-names(sampDatMale) <- c("uid",c(2002:2021))
-names(sampDatFemale) <- c("uid",c(2002:2021))
-names(posDatFemale) <- c("uid",c(2002:2021))
-names(posDatMale) <- c("uid",c(2002:2021))
-
-names(wsi.mat2) <- c("uid",c(2002:2021))
-
-wsi.mat[,2] <- as.numeric(wsi.mat[,2])
-wsi.mat[,3] <- as.numeric(wsi.mat[,3])
-wsi.mat[,4] <- as.numeric(wsi.mat[,4])
-wsi.mat[,5] <- as.numeric(wsi.mat[,5])
-wsi.mat[,6] <- as.numeric(wsi.mat[,6])
-wsi.mat[,7] <- as.numeric(wsi.mat[,7])
-wsi.mat[,8] <- as.numeric(wsi.mat[,8])
-wsi.mat[,9] <- as.numeric(wsi.mat[,9])
-wsi.mat[,10] <- as.numeric(wsi.mat[,10])
-wsi.mat[,11] <- as.numeric(wsi.mat[,11])
-wsi.mat[,12] <- as.numeric(wsi.mat[,12])
-wsi.mat[,13] <- as.numeric(wsi.mat[,13])
-wsi.mat[,14] <- as.numeric(wsi.mat[,14])
-wsi.mat[,15] <- as.numeric(wsi.mat[,15])
-wsi.mat[,16] <- as.numeric(wsi.mat[,16])
-wsi.mat[,17] <- as.numeric(wsi.mat[,17])
-wsi.mat[,18] <- as.numeric(wsi.mat[,18])
-wsi.mat[,19] <- as.numeric(wsi.mat[,19])
-wsi.mat[,20] <- as.numeric(wsi.mat[,20])
-wsi.mat[,21] <- as.numeric(wsi.mat[,21])
-for(i in 1:nrow(wsi.mat)){
-  wsi.mat[i,2:ncol(wsi.mat)] <- scale(unlist(wsi.mat[i,2:ncol(wsi.mat)]))[,1]
-}
-
-# remove first date in wsiDat and last in CWD dAT
-wsi.mat <- wsi.mat[,-2]
-sampDatFemale <- sampDatFemale[,-c(ncol(sampDatFemale))]
-sampDatMale <- sampDatMale[,-c(ncol(sampDatMale))]
-posDatFemale <- posDatFemale[,-c(ncol(posDatFemale))]
-posDatMale <- posDatMale[,-c(ncol(posDatMale))]
-# make everything long format
-wsi.mat2 <- as.data.frame(melt(wsi.mat))
-wsi.mat2 <- wsi.mat2 %>% arrange(year,uid)
-sampDatFemale <- as.data.frame(melt(sampDatFemale))
-sampDatMale <- as.data.frame(melt(sampDatMale))
-posDatMale <- as.data.frame(melt(posDatMale))
-posDatFemale <- as.data.frame(melt(posDatFemale))
-names(posDatMale) <- c("uid", "year", "nPosM")
-names(posDatFemale) <- c("uid", "year", "nPosF")
-names(sampDatFemale) <-c("uid", "year", "nSampF") 
-names(sampDatMale) <-c("uid", "year", "nSampM")
-names(wsi.mat2) <- c("uid", "year", "wsi")
-
-
-
-
-cwdDat2 <- merge(cwdDat, posDatMale, on.x = c("uid", "year"), on.y=c("uid", "year"))
-cwdDat2 <- merge(cwdDat2, posDatFemale, on.x = c("uid", "year"), on.y=c("uid", "year"))
-cwdDat2 <- merge(cwdDat2, sampDatFemale,on.x = c("uid", "year"), on.y=c("uid", "year"))
-cwdDat2 <- merge(cwdDat2, sampDatMale,on.x = c("uid", "year"), on.y=c("uid", "year"))
-cwdDat2 <- merge(cwdDat2, wsi.mat2,on.x = c("uid", "year"), on.y=c("uid", "year"))
-cwdDat2 <- cwdDat2 %>% arrange(year,uid)
-
-#write.table(cwdDat2,"./data/cwd-long") # save table
-cwdDat3 <- read.table("./data/cwd-long")
-
-cwdDat3 <- cwdDat3 %>% mutate(nPosT = nPosM + nPosF)
-cwdDat3 <- cwdDat3 %>% mutate(nSampT = nSampM + nSampF)
-# reorder so response is on the left
-cwdDat2 <- cwdDat2[,c(1,2,7,3,4,5,6,9)]
-# create adjacency matrices
-
-cwdDat3 <- cwdDat3 %>% arrange(year,uid)
-wiStudyShp <- wiStudyShp %>% arrange(uid)
-wiStudyShpPoly <- as(wiTwnshpShp, "Spatial")
-W.nb <- poly2nb(wiStudyShpPoly)
-W <- nb2mat(W.nb, style="B")
-W<-listw2mat(W)
-
-
-
-formula <- nPosT ~ wsi + year
-chains <- ST.CARar(formula = formula, family = "poisson", data = cwdDat3, W = W, burnin = 50000, n.sample = 80000, thin = 50, AR=1, n.chains=3, n.cores=3)
-chains$summary.results
-chains$modelfit
-chains$mcmc.info
-chains$accept
-
-# check male and female
-formulaM <- nPosM ~ offset(log(nSampM + 1)) + wsi
-chainsM <- ST.CARar(formula = formulaM, family = "poisson", data = cwdDat3, W = W, burnin = 110000, n.sample = 200000, thin = 50, AR=1, n.chains=3, n.cores=3)
-chainsM$summary.results
-
-
-# check female
-formulaF <- nPosF ~ offset(log(nSampF + 1)) + wsi
-chainsF <- ST.CARar(formula = formulaF, family = "poisson", data = cwdDat3, W = W, burnin = 110000, n.sample = 200000, thin = 50, AR=1, n.chains=3, n.cores=3)
-chainsF$summary.results
-
-
-chainsF$summary.results
-chainsM$summary.results
-chains$summary.results
-plot(chainsF$samples$beta)
-plot(chainsM$samples$beta)
-plot(chains$samples$beta)
-
-plot(chainsF$residuals)
-plot(chainsM$residuals)
-plot(chains$residuals)
-
-# do the same with an AR(2) model
-formula <- nPosT ~ offset(log(nSampT + 1)) + wsi
-chains2 <- ST.CARar(formula = formula, family = "poisson", data = cwdDat3, W = W, burnin = 110000, n.sample = 200000, thin = 50, AR=2, n.chains=3, n.cores=3)
-
-# check male and female
-formulaM <- nPosM ~ offset(log(nSampM + 1)) + wsi
-chainsM2 <- ST.CARar(formula = formulaM, family = "poisson", data = cwdDat3, W = W, burnin = 110000, n.sample = 200000, thin = 50, AR=2, n.chains=3, n.cores=3)
-chainsM$summary.results
-
-
-# check female
-formulaF <- nPosF ~ offset(log(nSampF + 1)) + wsi
-chainsF2 <- ST.CARar(formula = formulaF, family = "poisson", data = cwdDat3, W = W, burnin = 110000, n.sample = 200000, thin = 50, AR=2, n.chains=3, n.cores=3)
-chainsF2$summary.results
-
-
-# no lag
-chainsFnl<-ST.CARsepspatial(formula=formulaF, family="poisson", data=cwdDat3, W=W, burnin=110000, n.sample=200000, thin=50, n.chains=3, n.cores=3)
-chainsMnl<-ST.CARsepspatial(formula=formulaM, family="poisson", data=cwdDat3, W=W, burnin=110000, n.sample=200000, thin=50, n.chains=3, n.cores=3)
-chainsnl<-ST.CARsepspatial(formula=formula, family="poisson", data=cwdDat3, W=W, burnin=110000, n.sample=200000, thin=50, n.chains=3, n.cores=3)
-```
-
-```{r, get late season WSI mat for study area}
-wiTwnshpShpWSILate<-cbind(wiTwnshpShp, wsi.mat.late)
-wiStudyShpLate <-wiTwnshpShpWSILate[-c(which(!c(wiTwnshpShpWSILate$uid) %in% c(cwd.dat.pos$uuid))),]
-wiStudyShpLate <- arrange(wiStudyShpLate, uid)
-wsi.mat.late <- cbind(
-  wiStudyShpLate$V1,
-  wiStudyShpLate$V2,
-  wiStudyShpLate$V3,
-  wiStudyShpLate$V4,
-  wiStudyShpLate$V5,
-  wiStudyShpLate$V6,
-  wiStudyShpLate$V7,
-  wiStudyShpLate$V8,
-  wiStudyShpLate$V9,
-  wiStudyShpLate$V10,
-  wiStudyShpLate$V11,
-  wiStudyShpLate$V12,
-  wiStudyShpLate$V13,
-  wiStudyShpLate$V14,
-  wiStudyShpLate$V15,
-  wiStudyShpLate$V16,
-  wiStudyShpLate$V17,
-  wiStudyShpLate$V18,
-  wiStudyShpLate$V19,
-  wiStudyShpLate$V20
-  )
-
-# cwd.dat.pos <- cwd.dat.pos[,-which(colnames(cwd.dat.pos) == "uuid")]
-cwd.dat.pos<-cwd.dat.pos[,-1]
-cwd.dat.analyzed <- cwd.dat.analyzed[,-1]
-cwd.mat.pos <- matrix(0, nrow=nrow(cwd.dat.pos), ncol=ncol(cwd.dat.pos))
-cwd.mat.analyzed <- matrix(0, nrow=nrow(cwd.dat.analyzed), ncol=ncol(cwd.dat.analyzed))
-wsi.mat.ll <- matrix(0, nrow=nrow(wsi.mat.late), ncol=ncol(wsi.mat.late))
-for(i in 1:nrow(cwd.mat.pos)){
-  for(j in 1:ncol(cwd.mat.pos)){
-    cwd.mat.analyzed[i,j] <- as.numeric(cwd.dat.analyzed[i,j])
-    cwd.mat.pos[i,j] <- as.numeric(cwd.dat.pos[i,j])
-    wsi.mat.ll[i,j] <- as.numeric(wsi.mat.late[i,j])
-    }
-}
-
-```
 
 ```{r clean data, remove islands}
- 
 # create neighborhood matrix
 wiStudyShpPoly <- as(wiTwnshpShp.nz, "Spatial")
 W.nb <- poly2nb(wiStudyShpPoly)
@@ -692,289 +306,884 @@ names(posDatMale)[2:ncol(sampDatFemale)] <- c(2002:2022)
 names(posDatFemale)[2:ncol(sampDatFemale)] <- c(2002:2022)
 names(sampDatMale)[2:ncol(sampDatFemale)] <- c(2002:2022)
 
+```
+```{r create habitat suitability indices}
+# calculate landscape adjacency
+cv.adj <- c()
+adjSum <- 1
+cv<-data.frame(uid=WIDatClean5$uid,cv=WIDatClean5$cv)
+hsiDat <- hsiDat %>% arrange(uid)
+hsiDat$nb.cv <- 0
+hsiDat$nb.fd <- 0
+for(i in 1:nrow(cv)){
+  # cv.adj[i,] <- mean(WIDatClean5[c(W$adj),],na.rm=TRUE)
+  hsiDat[i,]$nb.cv <- mean(hsiDat[c(W$adj[adjSum:((adjSum-1)+W$num[i])]),]$cv)
+  hsiDat[i,]$nb.fd <- mean(hsiDat[c(W$adj[adjSum:((adjSum-1)+W$num[i])]),]$fd)
+  adjSum <- adjSum + W$num[i]
+}
+# calculate the difference between units cv and nb cv
+hsiDat <- hsiDat %>% mutate(cv.diff = cv-nb.cv,fd.diff = fd-nb.fd) %>% mutate(cv.diff.sc = scale(cv.diff)[,1], fd.diff.sc = scale(fd.diff)[,1])
 
-# plot WSI countywide
-wsiMast <- wsiMast %>% filter(name %in% unique(WIDat$County))
-wsiMast <- wsiMast[,-c(1:4)]
-wsiMast <- wsiMast[,-c(ncol(wsiMast))]
-matplot(t(wsiMast), type="l", main="Winter Severity Index (WSI) from WSI From WIDot", xlab="Year", ylab="WSI")
-wiTwnshpShpWSI <- inter
-matplot(t(wsiMat), type="l", main="Calculated Winter Severity Index (WSI) from Prism Data Winter", xlab="Year", ylab="WSI")
-
-wiCountyShp<-st_transform(wiCountyShp, st_crs(wiTwnshpShpWSI)) # project to same CRS
-# get the uid field I use to get unique townshps
-wiTwnshpShp <- wiTwnshpShp %>% mutate(uid = paste0(TWP, "-", RNG, "-", DIR_ALPHA))
-# get the intersection
-wiCountyTwnshps <- st_intersection(wiCountyShp, wiTwnshpShpWSI)
-wiCountyTwnshps <- wiCountyTwnshps %>% filter(!duplicated(wiCountyTwnshps$uid))
-wiCountyShps <- wiCountyTwnshps %>% group_by(COUNTY_NAM) %>% mutate(cV1 = mean(V1), cV2 = mean(V2), cV3 = mean(V3), cV4 = mean(V4), cV5 = mean(V5), cV6 = mean(V6), cV7 = mean(V7), cV8 = mean(V8), cV9 = mean(V9), cV10 = mean(V10), cV11 = mean(V11), cV12 = mean(V12), cV13 = mean(V13), cV14 = mean(V14), cV15 = mean(V15), cV16 = mean(V16), cV17 = mean(V17), cV18 = mean(V18), cV19 = mean(V19), cV20 = mean(V20))
-wiCountyShps <- wiCountyShps %>% select(COUNTY_FIP,cV1, cV2, cV3, cV4, cV5, cV6, cV7, cV8, cV9, cV10, cV11, cV12, cV13, cV14, cV15, cV16, cV17, cV18, cV19,cV20) # get rid of duplicates
-wiCountyShps <- wiCountyShps %>% filter(!duplicated(COUNTY_FIP))
-wsiMatCountyAvg <- cbind(
-  wiCountyShps$cV1,
-  wiCountyShps$cV2,
-  wiCountyShps$cV3,
-  wiCountyShps$cV4,
-  wiCountyShps$cV5,
-  wiCountyShps$cV5,
-  wiCountyShps$cV6,
-  wiCountyShps$cV7,
-  wiCountyShps$cV8,
-  wiCountyShps$cV9,
-  wiCountyShps$cV10,
-  wiCountyShps$cV11,
-  wiCountyShps$cV12,
-  wiCountyShps$cV13,
-  wiCountyShps$cV14,
-  wiCountyShps$cV13,
-  wiCountyShps$cV15,
-  wiCountyShps$cV16,
-  wiCountyShps$cV17,
-  wiCountyShps$cV18,
-  wiCountyShps$cV19,
-  wiCountyShps$cV20
-)
-
-matplot(t(wsiMatCountyAvg), type="l")
-matplot(t(wsiMast), type="l")
-plot(nb)
 ```
 
 ```{r echo=FALSE, INLA}
 wiTwnshpShp$uid <- paste0(wiTwnshpShp$TWP, "-", wiTwnshpShp$RNG, "-", wiTwnshpShp$DIR_ALPHA)
-WIDatClean5 <- WIDatClean5 %>% filter(uid %in% hsiDat$uid)
-WIDatClean5 <- WIDatClean5 %>% arrange(year, uid)
-
-wiTwnshpStudy <- wiTwnshpShp %>%  filter(uid %in% WIDatClean5$uid) %>% arrange(uid)
-
-
-
+wiStudyShp <- wiTwnshpShp %>%  filter(uid %in% WIDatClean5$uid) %>% arrange(uid)
 # check for island
-wiTwnshpPoly <- as(wiTwnshpStudy, "Spatial")
-W.nb <- poly2nb(wiTwnshpPoly)
-W <- nb2WB(W.nb) 
-island.uid <- wiTwnshpStudy[which(W$num==0),]$uid
-wiTwnshpStudy <- wiTwnshpStudy %>% filter(!(uid %in% island.uid))
-
-WIDatClean5 <-WIDatClean5 %>% filter(!(uid %in% island.uid))
-
-# arrange everything again to be sure
+# wiTwnshpPoly <- as(wiStudyShp, "Spatial")
+# W.nb <- poly2nb(wiTwnshpPoly)
+# W <- nb2WB(W.nb) 
+# island.uid <- wiTwnshpStudy[which(W$num==0),]$uid
+# wiTwnshpStudy <- wiTwnshpStudy %>% filter(!(uid %in% island.uid))
+# WIDatClean5 <-WIDatClean5 %>% filter(!(uid %in% island.uid))
 WIDatClean5 <- WIDatClean5 %>% arrange(year, uid)
-wiTwnshpStudy <- wiTwnshpShp %>% arrange(uid)
-wiStudyShp <- wiTwnshpShp %>% filter(uid %in% WIDatClean5$uid)
-wiStudyShp <- wiStudyShp %>% arrange(uid)
-# join with HSI Dat
-WIDatClean5 <- merge(WIDatClean5, hsiDat, on.x="uid", on.y="uid", all.x=TRUE)
-
-
-
-WIDatClean5$pos.prev.0 <- if_else(WIDatClean5$pos.prev==0,0,1)
-WIDatClean5$pos.prev.nz <- if_else(WIDatClean5$pos.prev>0,WIDatClean5$pos.prev,NA)
-
-
-# create identifiers for year; uid for inla
+# analysis for long
 WIDatClean5$idarea <- as.numeric(as.factor(WIDatClean5$uid))
 WIDatClean5$idarea2 <- WIDatClean5$idarea
 WIDatClean5$idtime <- 1 + as.numeric(WIDatClean5$year) - min(as.numeric(WIDatClean5$year))
 WIDatClean5$idtime2 <- WIDatClean5$idtime
-
-
-# create the design matrices
-x.0 <- data.frame(uid.0 = WIDatClean5$uid,
-                  year.0 = WIDatClean5$year,
-                  idtime0 = WIDatClean5$idtime,
-                  idtime2.0 = WIDatClean5$idtime,
-                  idarea.0 = WIDatClean5$idarea,
-                  idarea2.0 = WIDatClean5$idarea,
-                  wsi.0 = WIDatClean5$wsi.sc,
-                  pos.prev.t.minus.1.sc.0=WIDatClean5$pos.prev.t.minus.1.sc,
-                  MA.prev.t.samp.sc.0 = WIDatClean5$MA.prev.t.samp.sc,
-                  MY.prev.t.samp.sc.0 = WIDatClean5$MY.prev.t.samp.sc,
-                  MJ.prev.t.samp.sc.0 = WIDatClean5$MJ.prev.t.samp.sc,
-                  FA.prev.t.samp.sc.0 = WIDatClean5$FA.prev.t.samp.sc,
-                  FY.prev.t.samp.sc.0 = WIDatClean5$FY.prev.t.samp.sc,
-                  FJ.prev.t.samp.sc.0 = WIDatClean5$FJ.prev.t.samp.sc,
-                  MA.prev.sc.0 = WIDatClean5$MA.prev.sc,
-                  MY.prev.sc.0 = WIDatClean5$MY.prev.sc,
-                  MJ.prev.sc.0 = WIDatClean5$MJ.prev.sc,
-                  FA.prev.sc.0 = WIDatClean5$FA.prev.sc,
-                  FY.prev.sc.0 = WIDatClean5$FY.prev.sc,
-                  FJ.prev.sc.0 = WIDatClean5$FJ.prev.sc,
-                  x.0 = WIDatClean5$x.sc,
-                  y.0 = WIDatClean5$y.sc,
-                  cv.0 = WIDatClean5$cv,
-                  nSamp.0 = scale(WIDatClean5$nSamp)[,1],
-                  fd.0 = WIDatClean5$fd
-)
-
-x.nz <- data.frame(uid.nz = WIDatClean5$uid,
-                   year.nz = WIDatClean5$year,
-                   idtime.nz = WIDatClean5$idtime,
-                   idtime2.nz = WIDatClean5$idtime,
-                   wsi.nz = WIDatClean5$wsi.sc,
-                   idarea.nz = WIDatClean5$idarea,
-                   idarea2.nz = WIDatClean5$idarea,
-                   pos.prev.t.minus.1.sc.nz=WIDatClean5$pos.prev.t.minus.1.sc,
-                   MA.prev.t.samp.sc.nz = WIDatClean5$MA.prev.t.samp.sc,
-                   MY.prev.t.samp.sc.nz = WIDatClean5$MY.prev.t.samp.sc,
-                   MJ.prev.t.samp.sc.nz = WIDatClean5$MJ.prev.t.samp.sc,
-                   FA.prev.t.samp.sc.nz = WIDatClean5$FA.prev.t.samp.sc,
-                   FY.prev.t.samp.sc.nz = WIDatClean5$FY.prev.t.samp.sc,
-                   FJ.prev.t.samp.sc.nz = WIDatClean5$FJ.prev.t.samp.sc,
-                   MA.prev.sc.nz = WIDatClean5$MA.prev.sc,
-                   MY.prev.sc.nz = WIDatClean5$MY.prev.sc,
-                   MJ.prev.sc.nz = WIDatClean5$MJ.prev.sc,
-                   FA.prev.sc.nz = WIDatClean5$FA.prev.sc,
-                   FY.prev.sc.nz = WIDatClean5$FY.prev.sc,
-                   FJ.prev.sc.nz = WIDatClean5$FJ.prev.sc,
-                   x.nz = WIDatClean5$x.sc,
-                   y.nz = WIDatClean5$y.sc,
-                   cv.nz = WIDatClean5$cv,
-                   fd.nz = WIDatClean5$fd
-)
+#wiDatLong$idgroup <- as.factor(wiDatLong$value.)
 cwdDat.wide <- reshape(WIDatClean5, timevar="year", idvar=c("uid"), direction="wide")
 wiTwnshpPoly <- as(wiStudyShp, "Spatial")
-map <- merge(wiTwnshpPoly, cwdDat.wide, by.x = "uid", by.y = "uid")
+map <- merge(wiTwnshpPoly, cwdDat.wide, by.x = "uid")
 nb <- poly2nb(map) # create nb object
 nb2INLA("map.adj", nb)
 g <- inla.read.graph(filename = "map.adj")
-# table for combined zero and count process
-#./data/FinalTable-RETREAT-not-zero-split
-# make INLA stacks
-stack.nz <- inla.stack(
-  tag="fit.nz",
-  data=list(all.prev=cbind(WIDatClean5$pos.prev.nz,NA)),
+
+# create dataframes for joint analysis
+x.0 <- data.frame(uid.0 = WIDatClean5$uid,
+                  year.0 = WIDatClean5$year,
+                  idtime.0 = WIDatClean5$idtime,
+                  idtime2.0 = WIDatClean5$idtime,
+                  idtime3.0= WIDatClean5$idtime,
+                  idarea.0 = WIDatClean5$idarea,
+                  idarea2.0 = WIDatClean5$idarea,
+                  wsi.0 = WIDatClean5$wsi,
+                  pos.prev.t.minus.1.0=WIDatClean5$pos.prev.t.minus.1.z,
+                  x.0 = WIDatClean5$x,
+                  y.0 = WIDatClean5$y,
+                  nSamp.0 = WIDatClean5$nSamp,
+                  cv.diff.0 = WIDatClean5$cv.diff,
+                  fd.diff.0 = WIDatClean5$fd.diff,
+                  prop.M.0 = as.numeric(scale(WIDatClean5$prop.M)),
+                  prop.F.0 = as.numeric(scale(WIDatClean5$prop.F))
+)
+x.c <- data.frame(uid.c = WIDatClean5$uid,
+                  year.c = WIDatClean5$year,
+                  idtime.c = WIDatClean5$idtime,
+                  idtime3.c =WIDatClean5$idtime,
+                  idtime2.c = WIDatClean5$idtime,
+                  idarea.c = WIDatClean5$idarea,
+                  idarea2.c = WIDatClean5$idarea,
+                  wsi.c = WIDatClean5$wsi,
+                  x.c = WIDatClean5$x,
+                  y.c = WIDatClean5$y,
+                  nSamp.c = WIDatClean5$nSamp,
+                  cv.diff.c = WIDatClean5$cv.diff,
+                  fd.diff.c = WIDatClean5$fd.diff,
+                  prop.M.c = scale(as.numeric(WIDatClean5$prop.M)),
+                  pos.prev.t.minus.1.c=WIDatClean5$pos.prev.t.minus.1.z,
+                  prop.F.c = scale(as.numeric(WIDatClean5$prop.F))
+)
+
+stack.c <- inla.stack(
+  tag="fit.c",
+  data=list(all.prev=cbind(WIDatClean5$prev.c,NA)),
   A = list(1),
   effects = list(
-    x.nz = as.data.frame(x.nz)
+    x.c = as.data.frame(x.c)
   )
 )
 stack.0 <- inla.stack(
   tag="fit.0",
-  data=list(all.prev=cbind(NA,WIDatClean5$pos.prev.0)),
+  data=list(all.prev=cbind(NA,WIDatClean5$prev.z)),
   A = list(1),
   effects = list(
-    x.nz = as.data.frame(x.0)
-  )
-)
-# specify formula
-stack.t <- inla.stack(stack.nz, stack.0)
-f.hurdle <- pos.prev.nz ~ idtime + wsi.sc + f(pos.prev.t.minus.1.sc, model = "ar1") + x.sc + y.sc + fd + cv + f(idarea, model = "besag", graph = g, scale.model = TRUE) 
+    x.0 = as.data.frame(x.0)
+  ))
 
-f.hurdle.0 <- pos.prev.0 ~ idtime + wsi.sc + f(pos.prev.t.minus.1.sc, model = "ar1") + f(idarea, model = "besag", graph = g, scale.model = TRUE) + x.sc + y.sc + fd + cv
+stack.t <- inla.stack(stack.c, stack.0)
+```
+```{r fit without correlation structure}
 
-# next step might be to check out differences in cv based on neighborhood
+f.hurdle.no.corr <- all.prev ~ -1 +  idtime.c +
+scale(wsi.c) + male.c + scale(y.c) + 
+scale(cv.diff.c) + 
+male.0 + scale(wsi.0) + scale(cv.diff.0) +
+scale(y.0) + idtime.0 + scale(nSamp.0)
+hurdle.out.no.corr<-inla(f.hurdle.no.corr, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
 
-# separate model
+resid<-hurdle.out.no.corr$residuals$deviance.residuals
+# check residual structure
 
-prior.list <- list(pc.prec = list(prec = list(prior = "pc.prec", param = c(1, 0.5)))# prior for 
-                   )
+count<-cbind(stack.t$data$data$all.prev.1,resid)
+z<-cbind(stack.t$data$data$all.prev.2,resid)
 
 
-f.hurdle.pc <- all.prev ~  idtime.nz + wsi.nz + MA.prev.t.samp.sc.nz + MY.prev.t.samp.sc.nz + wsi.nz:FY.prev.sc.nz + f(idtime2.nz, model="iid") + f(idarea2.nz, model="iid", graph=g, hyper=prior.list$pc.prec) + f(pos.prev.t.minus.1.sc.nz, model = "ar1") + cv.nz + fd.nz + f(idarea.nz, model = "besag", graph = g, hyper=prior.list$pc.prec)  + f(idtime2.0, model="iid") + idtime0 + wsi.0 + MA.prev.t.samp.sc.0 + MY.prev.t.samp.sc.0 + f(pos.prev.t.minus.1.sc.0, model = "ar1") + f(idarea.0, model = "besag", graph = g, hyper=prior.list$pc.prec, scale.model=TRUE) + x.0 + y.0 + cv.0 + fd.0 + f(idarea2.0, model="iid", graph=g, hyper=prior.list$pc.prec) + nSamp.0
 
-hurdle.out.pc<-inla(f.hurdle, family=c("nbinomial"), data=WIDatClean5, control.compute=list(dic=TRUE,waic=TRUE),
-     control.predictor=list(link=1))
+residDat <- as.data.frame(cbind(resid, stack.t$effects$data$year.c))
+names(residDat) <- c("resid","year")
+plot(resid~year,data=residDat)
 
-# call for joint
+
+residDat$x = stack.t$effects$data$x.c
+residDat$y = stack.t$effects$data$y.c
+
+#####
+##create plot to show spatial clustering of data
+#####
+coordinates(residDat) <- c(residDat$x,residDat$y)
+bubble(residDat, "resid", col=c("black", "grey"),
+       main="Residuals", xlab="X-coordinates", ylab="y-coordinates")
+
+W.nb <- poly2nb(wiStudyShp)
+
+
+residDat$count.prev<-stack.t$data$data$all.prev.1
+residDat$z.prev<-stack.t$data$data$all.prev.2
+residDat$sex <- stack.t$effects$data$group.c
+moranDat.2020 <- residDat %>% filter(!is.na(count.prev) &
+                                                  year == 2020) %>% arrange(uid)%>%
+  filter(sex == "M") 
+
+wiMoranShp.2020 <- wiStudyShp %>% filter(uid %in% moranDat.2020$uid) %>% 
+  arrange(uid)
+# remove islands
+W.nb <- poly2nb(wiMoranShp.2020)
+W <- nb2WB(W.nb)
+moranDat.2020 <- moranDat.2020[-c(which(W$num==0)),]
+wiMoranShp.2020 <- wiMoranShp.2020[-c(which(W$num==0)),]
+W.nb <- poly2nb(wiMoranShp.2020)
+W <- nb2WB(W.nb)
+W.listw <- nb2listw(W.nb)
+
+(moran.out<-moran.test(moranDat.2020$resid,
+                       listw=W.listw, na.action = na.omit))
+moran.plot(moranDat.2020$resid,listw=W.listw, xlab="Deviance Residual",
+           ylab="Neighbors Neighbors Deviance Residual",
+           main="Moran Scatterplot for Male CWD Prevalence in 2020")
+
+
+residDat$count.prev<-stack.t$data$data$all.prev.1
+residDat$z.prev<-stack.t$data$data$all.prev.2
+residDat$sex <- stack.t$effects$data$group.c
+moranDat.2020.f <- residDat %>% filter(!is.na(count.prev) &
+                                                  year == 2020) %>% arrange(uid)%>%
+  filter(sex == "F") 
+
+wiMoranShp.2020.f <- wiStudyShp %>% filter(uid %in% moranDat.2020.f$uid) %>% 
+  arrange(uid)
+# remove islands
+W.nb <- poly2nb(wiMoranShp.2020.f)
+W <- nb2WB(W.nb)
+moranDat.2020.f <- moranDat.2020.f[-c(which(W$num==0)),]
+wiMoranShp.2020.f <- wiMoranShp.2020.f[-c(which(W$num==0)),]
+W.nb <- poly2nb(wiMoranShp.2020.f)
+W <- nb2WB(W.nb)
+W.listw <- nb2listw(W.nb)
+(moran.out<-moran.test(moranDat.2020.f$resid,
+                       listw=W.listw, na.action = na.omit))
+moran.plot(moranDat.2020.f$resid,listw=W.listw, xlab="Deviance Residual",
+           ylab="Neighbors Neighbors Deviance Residual",
+           main="Moran Scatterplot for Female CWD Prevalence in 2020")
+
+
+
+# plot the pacf
+residDatSum <- residDat %>% group_by(year) %>% summarise(mean.resid=mean(resid, na.rm=TRUE))
+pacf(residDatSum$mean.resid, na.action=na.pass)
+(pacf<-pacf(residDatSum$mean.resid, plot=FALSE, na.action=na.pass))
+
+```
+
+
+```{r model selection}
+##################################################################################################################################################################### MOdels with Random Effects only###################################################################################
+
+# intercept only model
+# 44104.40
+f.hurdle.intercept.only <- all.prev ~ 1
+hurdle.out.intercept.only<-inla(f.hurdle.intercept.only, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+
+# hurdle AR(1)
+# 42473.51
+f.hurdle.ar.1.only <- all.prev ~ -1 + 
+f(pos.prev.t.minus.1.c, model = "ar1") + 
+f(pos.prev.t.minus.1.0, model = "ar1")
+hurdle.out.ar.1.only<-inla(f.hurdle.ar.1.only, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+
+# iid temporal
+# waic 38463.61
+f.hurdle.rand.temporal <- all.prev ~ -1 + 
+f(idtime.c, model = "iid") + f(idtime.0, model = "iid")
+hurdle.out.rand.temporal<-inla(f.hurdle.rand.temporal, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+
+# hurdle AR(1) + iid temporal
+# 34733.45
+f.hurdle.ar.1.and.iid.temporal <- all.prev ~ -1 + 
+f(pos.prev.t.minus.1.c, model = "ar1") + 
+f(pos.prev.t.minus.1.0, model = "ar1") +f(idtime.c, model = "iid") + f(idtime.0, model = "iid") 
+hurdle.out.ar.1.and.iid.temporal<-inla(f.hurdle.ar.1.and.iid.temporal, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+
+
+# hurdle BESAG only
+# 37044.98
+f.hurdle.besag.only <- all.prev ~ -1 +
+f(idarea.c, model = "besag", graph = g, scale.model=TRUE) +   
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE)
+hurdle.out.besag.only<-inla(f.hurdle.besag.only, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+
+# hurdle iid only
+# 37083.16
+f.hurdle.spatial.iid.only <- all.prev ~ -1 + f(idarea2.c, model="iid", graph=g) +  
+f(idarea2.0, model="iid", graph=g)
+hurdle.out.spatial.iid.only<-inla(f.hurdle.spatial.iid.only, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+
+# hurdle BESAG + iid
+# 36960.83
+f.hurdle.besag.and.iid <- all.prev ~ -1 +
+f(idarea.c, model = "besag", graph = g, scale.model=TRUE) + f(idarea2.c, model="iid", graph=g) +   
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE) + 
+f(idarea2.0, model="iid", graph=g)
+hurdle.out.besag.and.iid<-inla(f.hurdle.besag.and.iid, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+
+# hurdle with random space and time components
+# 32821
+f.hurdle.rand.space.time <- all.prev ~ -1 + f(idarea2.c, model="iid", graph=g) + 
+f(pos.prev.t.minus.1.c, model = "ar1") + 
+f(idarea.c, model = "besag", graph = g) + f(idtime.c, model = "iid") + f(idtime.0, model = "iid") + 
+f(pos.prev.t.minus.1.0, model = "ar1") + 
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE) +
+f(idarea2.0, model="iid", graph=g)
+
+hurdle.out.rand.space.time<-inla(f.hurdle.rand.space.time, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+
+
+
+
+########################################################################################################################################################################## MOdels with Fixed and Random Effects ################################################################################
+
+# sex only (both components)
+# all that matters is the spread, the passage of time and the location
+# 32512.10
+f.hurdle.fixed.sex.only <- all.prev ~ -1 + f(idarea2.c, model="iid", graph=g) + 
+f(pos.prev.t.minus.1.c, model = "ar1") + male.c + 
+f(idarea.c, model = "besag", graph = g) + f(idtime2.c, model = "iid") + f(idtime2.0, model = "iid") + 
+f(pos.prev.t.minus.1.0, model = "ar1")  + male.0 + 
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE) +
+f(idarea2.0, model="iid", graph=g)
+hurdle.out.fixed.sex.only<-inla(f.hurdle.fixed.sex.only, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+
+# wsi only (both components)
+# all that matters is the spread, the passage of time and the location
+# 32822.70
+f.hurdle.fixed.wsi.only <- all.prev ~ -1 + f(idarea2.c, model="iid", graph=g) + 
+f(pos.prev.t.minus.1.c, model = "ar1") + scale(wsi.c) + 
+f(idarea.c, model = "besag", graph = g) + f(idtime2.c, model = "iid") + f(idtime2.0, model = "iid") + 
+f(pos.prev.t.minus.1.0, model = "ar1")  + scale(wsi.0) + 
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE) +
+f(idarea2.0, model="iid", graph=g)
+hurdle.out.fixed.wsi.only<-inla(f.hurdle.fixed.wsi.only, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+
+
+# time only (both components)
+# all that matters is the spread, the passage of time increase
+# 32820.78
+f.hurdle.fixed.time.only <- all.prev ~ -1 + f(idarea2.c, model="iid", graph=g) + 
+f(pos.prev.t.minus.1.c, model = "ar1") + idtime.c + 
+f(idarea.c, model = "besag", graph = g) + f(idtime2.c, model = "iid") + f(idtime2.0, model = "iid") + 
+f(pos.prev.t.minus.1.0, model = "ar1")  + idtime.0  + 
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE) +
+f(idarea2.0, model="iid", graph=g)
+hurdle.out.fixed.time.only<-inla(f.hurdle.fixed.time.only, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+
+# coords only
 # 
-# hurdle.out.pc<-inla(f.hurdle.pc, family=c("nbinomial", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE),
-#      control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+f.hurdle.fixed.coords.only <- all.prev ~ -1 + f(idarea2.c, model="iid", graph=g) + 
+f(pos.prev.t.minus.1.c, model = "ar1") + scale(y.c) +
+f(idarea.c, model = "besag", graph = g) + f(idtime2.c, model = "iid") + f(idtime2.0, model = "iid") + 
+f(pos.prev.t.minus.1.0, model = "ar1") + 
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE) +
+f(idarea2.0, model="iid", graph=g) + scale(y.0)
+hurdle.out.fixed.coords.only<-inla(f.hurdle.fixed.coords.only, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
 
-#write.table(cwdDat5, "./cwdDatFinal") # write this to file
+# sex + wsi + time model in both components
+# 32509.33
+f.hurdle.fixed.sex.wsi <- all.prev ~ -1 + scale(wsi.c) + male.c +
+f(idarea2.c, model="iid", graph=g) + f(pos.prev.t.minus.1.c, model = "ar1") + 
+f(idarea.c, model = "besag", graph = g, scale.model=TRUE) + f(idtime2.c, model = "iid") +
+male.0 + scale(wsi.0) + f(idtime2.0, model = "iid") +
+f(pos.prev.t.minus.1.0, model = "ar1")  + 
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE) +
+f(idarea2.0, model="iid", graph=g)
+hurdle.out.fixed.sex.wsi.time<-inla(f.hurdle.fixed.sex.wsi,
+                                    family=c("zeroinflatednbinomial0",
+                                             "binomial"),
+                                    data=inla.stack.data(stack.t),
+                                    control.compute=list(dic=TRUE,waic=TRUE),
+                                    control.predictor=list(link=1,
+                                                           A=inla.stack.A(stack.t)))
 
-# to look at the marginals of posterior
-# plot(inla.smarginal(hurdle.out.pc$marginals.hyperpar$`Rho for pos.prev.t.minus.1.sc.nz`), type="l")
 
 
-# try fitting with long-format data
+# sex + wsi + time model in both components
+# 32509.33
+f.hurdle.fixed.sex.wsi.time <- all.prev ~ -1 + scale(wsi.c) + male.c + idtime.c +
+f(idarea2.c, model="iid", graph=g) + f(pos.prev.t.minus.1.c, model = "ar1") + 
+f(idarea.c, model = "besag", graph = g, scale.model=TRUE) + f(idtime2.c, model = "iid") +
+male.0 + scale(wsi.0) + idtime.0 + f(idtime2.0, model = "iid") +
+f(pos.prev.t.minus.1.0, model = "ar1")  + 
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE) +
+f(idarea2.0, model="iid", graph=g)
+hurdle.out.fixed.sex.wsi.time<-inla(f.hurdle.fixed.sex.wsi.time,
+                                    family=c("zeroinflatednbinomial0",
+                                             "binomial"),
+                                    data=inla.stack.data(stack.t),
+                                    control.compute=list(dic=TRUE,waic=TRUE),
+                                    control.predictor=list(link=1,
+                                                           A=inla.stack.A(stack.t)))
 
-# WITimeSeries4 <- WITimeSeries4[,-c(5)]
-WITimeSeries4 <- WITimeSeries4 %>% filter(uid %in% WIDatClean5$uid)
-WITimeSeries4 <- WITimeSeries4 %>% arrange(year, uid, group)
-WITimeSeries4$idarea <- as.numeric(as.factor(WITimeSeries4$uid))
-WITimeSeries4$idarea2 <- WITimeSeries4$idarea
-WITimeSeries4$idtime <- 1 + as.numeric(WITimeSeries4$year) - min(as.numeric(WITimeSeries4$year))
-WITimeSeries4$idtime2 <- WITimeSeries4$idtime
-WITimeSeries4$idgroup <- as.numeric(as.factor(WITimeSeries4$group))
+# sex + wsi time model in both components; fixed effect and yinla
+# 32438.82
+f.hurdle.fixed.sex.wsi.time.coords.nSamp0 <- all.prev ~ -1 +  idtime.c + f(idarea2.c, model="iid", graph=g) + 
+f(pos.prev.t.minus.1.c, model = "ar1") + scale(wsi.c) + male.c + scale(y.c) +
+f(idarea.c, model = "besag", graph = g) + f(idtime2.c, model = "iid") + f(idtime2.0, model = "iid") + 
+f(pos.prev.t.minus.1.0, model = "ar1")  + male.0 + scale(wsi.0) + 
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE) + 
+f(idarea2.0, model="iid", graph=g) + scale(y.0) + idtime.0 + scale(nSamp.0)
+hurdle.out.fixed.sex.wsi.time.coords.nSamp0<-inla(f.hurdle.fixed.sex.wsi.time.coords.nSamp0, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
 
-x.0.2 <- data.frame(uid.0 = WITimeSeries4$uid,
-                  year.0 = WITimeSeries4$year,
-                  idtime0 = WITimeSeries4$idtime,
-                  idtime2.0 = WITimeSeries4$idtime,
-                  idarea.0 = WITimeSeries4$idarea,
-                  idarea2.0 = WITimeSeries4$idarea,
-                  idgroup.0 = WITimeSeries4$idgroup,
-                  wsi.0 = WITimeSeries4$wsi.sc,
-                  pos.prev.t.minus.1.sc.0=WITimeSeries4$pos.prev.t.minus.1.sc,
-                  x.0 = WITimeSeries4$x.sc,
-                  y.0 = WITimeSeries4$y.sc,
-                  group.0 = WITimeSeries4$group,
-                  nSamp.0 = scale(WITimeSeries4$nSamp)[,1]
-)
+# sex + wsi + time fixed effect on y cv
+# 32425.53
+f.hurdle.fixed.sex.wsi.time.coords.nSamp0.cv <- all.prev ~ -1 +  idtime.c +
+f(idarea2.c, model="iid", graph=g) + f(idtime3.c, model="ar1") +
+scale(wsi.c) + prop.M.c + f(idarea.c, model = "besag", graph = g, scale.model=TRUE) +
+scale(cv.diff.c) + f(idtime2.c, model = "iid") +
+prop.M.0 + scale(wsi.0) + scale(cv.diff.0) +
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE) + 
+f(idarea2.0, model="iid", graph=g) + idtime.0 + scale(nSamp.0) + f(idtime3.0, model="ar1")
+hurdle.out.fixed.sex.wsi.time.coords.nSamp0.cv<-inla(f.hurdle.fixed.sex.wsi.time.coords.nSamp0.cv, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
 
-x.nz.2 <- data.frame(uid.nz = WITimeSeries4$uid,
-                   year.nz = WITimeSeries4$year,
-                   idtime.nz = WITimeSeries4$idtime,
-                   idtime2.nz = WITimeSeries4$idtime,
-                   wsi.nz = WITimeSeries4$wsi.sc,
-                   idarea.nz = WITimeSeries4$idarea,
-                   idarea2.nz = WITimeSeries4$idarea,
-                   idgroup.nz = WITimeSeries4$idgroup,
-                   group.nz = WITimeSeries4$group,
-                   pos.prev.t.minus.1.sc.nz=WITimeSeries4$pos.prev.t.minus.1.sc,
-                   x.nz = WITimeSeries4$x.sc,
-                   y.nz = WITimeSeries4$y.sc
-)
+# sex + wsi + time fixed effect on y fd
+# 32437.87
+f.hurdle.fixed.sex.wsi.time.coords.nSamp0.fd <- all.prev ~ -1 +  idtime.c +
+f(idarea2.c, model="iid", graph=g) + f(pos.prev.t.minus.1.c, model = "ar1") +
+scale(wsi.c) + male.c + scale(y.c) +f(idarea.c, model = "besag", graph = g) +
+scale(fd.diff.c) + f(idtime2.c, model = "iid") + f(idtime2.0, model = "iid") + 
+f(pos.prev.t.minus.1.0, model = "ar1")+ male.0 + scale(wsi.0) + scale(fd.diff.0) +
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE) + 
+f(idarea2.0, model="iid", graph=g) + scale(y.0) + idtime.0 + scale(nSamp.0)
+hurdle.out.fixed.sex.wsi.time.coords.nSamp0.fd<-inla(f.hurdle.fixed.sex.wsi.time.coords.nSamp0.fd, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
 
-WITimeSeries4$pos.prev.0 <- if_else(WITimeSeries4$pos.prev==0,0,1)
-WITimeSeries4$pos.prev.nz <- if_else(WITimeSeries4$pos.prev>0,WITimeSeries4$pos.prev,NA)
-
-stack.nz.2 <- inla.stack(
-  tag="fit.nz",
-  data=list(all.prev=cbind(WITimeSeries4$pos.prev.nz,NA)),
-  A = list(1),
-  effects = list(
-    x.nz = as.data.frame(x.nz.2)
-  )
-)
-stack.0.2 <- inla.stack(
-  tag="fit.0",
-  data=list(all.prev=cbind(NA,WITimeSeries4$pos.prev.0)),
-  A = list(1),
-  effects = list(
-    x.nz = as.data.frame(x.0.2)
-  )
-)
-
-cwdDat.wide <- reshape(WITimeSeries4, timevar="year", idvar=c("uid", "idgroup"), direction="wide")
+# table for combined zero and cohuunt process
+#./data/FinalTable-RETREAT-not-zero-split
+# make INLA stacks
+```
+```{r}
+WIDat.hunt.y <- WIDat.hunt.y %>% arrange(year, uid)
+WIDat.hunt.y$prop.PMA <- if_else(WIDat.hunt.y$nMA==0,NA,WIDat.hunt.y$nPMA/WIDat.hunt.y$nPos)
+# analysis for long
+WIDat.hunt.y$idarea <- as.numeric(as.factor(WIDat.hunt.y$uid))
+WIDat.hunt.y$idarea2 <- as.numeric(as.factor(WIDat.hunt.y$uid))
+WIDat.hunt.y$idtime <- 1 + as.numeric(WIDat.hunt.y$year) - min(as.numeric(WIDat.hunt.y$year))
+WIDat.hunt.y$idtime2 <- 1 + as.numeric(WIDat.hunt.y$year) - min(as.numeric(WIDat.hunt.y$year))
+WIDat.hunt.y$idtime3 <- 1 + as.numeric(WIDat.hunt.y$year) - min(as.numeric(WIDat.hunt.y$year))
+cwdDat.wide <- reshape(WIDat.hunt.y, timevar="year", idvar=c("uid"), direction="wide")
 wiTwnshpPoly <- as(wiStudyShp, "Spatial")
-map <- merge(wiTwnshpPoly, cwdDat.wide, by.x = "uid", duplicateGeoms=TRUE)
+map <- merge(wiTwnshpPoly, cwdDat.wide, by.x = "uid")
 nb <- poly2nb(map) # create nb object
 nb2INLA("map.adj", nb)
 g <- inla.read.graph(filename = "map.adj")
 
-prior.list <- list(pc.prec = list(prec = list(prior = "pc.prec", param = c(1, 0.5)))# prior for 
-                   )
-stack.t <- inla.stack(stack.nz.2, stack.0.2)
+# create dataframes for joint analysis
+x.0 <- data.frame(uid.0 = WIDat.hunt.y$uid,
+                  year.0 = WIDat.hunt.y$year,
+                  idtime.0 = WIDat.hunt.y$idtime,
+                  idtime2.0 = WIDat.hunt.y$idtime,
+                  idtime3.0= WIDat.hunt.y$idtime,
+                  idarea.0 = WIDat.hunt.y$idarea,
+                  idarea2.0 = WIDat.hunt.y$idarea,
+                  wsi.0 = WIDat.hunt.y$wsi,
+                  x.0 = WIDat.hunt.y$x,
+                  y.0 = WIDat.hunt.y$y,
+                  nSamp.0 = WIDat.hunt.y$nSamp,
+                  cv.diff.0 = WIDat.hunt.y$cv.diff,
+                  fd.diff.0 = WIDat.hunt.y$nMY,
+                  fd.diff.0 = WIDat.hunt.y$fd.diff,
+                  fd.diff.0 = WIDat.hunt.y$fd.diff,
+                  fd.diff.0 = WIDat.hunt.y$fd.diff, 
+                  prop.MA.0 = WIDat.hunt.y$prop.MA,
+                  prop.MY.0 = WIDat.hunt.y$prop.MY,
+                  prop.FA.0 = WIDat.hunt.y$prop.FA,
+                  prop.FY.0 = WIDat.hunt.y$prop.FY,
+                  nMA.0 = WIDat.hunt.y$nMA,
+                  nMY.0 = WIDat.hunt.y$nMY,
+                  nFA.0 = WIDat.hunt.y$nFA,
+                  nFY.0 = WIDat.hunt.y$nFY,
+                  nPMA.0 = WIDat.hunt.y$nPMA,
+                  nPMY.0 = WIDat.hunt.y$nPMY,
+                  nPFA.0 = WIDat.hunt.y$nPFA,
+                  nPFY.0 = WIDat.hunt.y$nPFY,
+                  nPos.t.minus.1.0 = WIDat.hunt.y$nPos.t.minus.1,
+                  snopack.max.0 = WIDat.hunt.y$snopackMax,
+                  numDays0sno.0 = WIDat.hunt.y$numDays0sno,
+                  numDayssno.0 = WIDat.hunt.y$numDays,
+                  wsi.early.0 = WIDat.hunt.y$wsi.early,
+                  wsi.ttl.0 = WIDat.hunt.y$wsi.ttl,
+                  wsi.late.0 = WIDat.hunt.y$wsi.late,
+                  pop.0 = WIDat.hunt.y$pop
+)
 
-f.hurdle.pc.3 <- pos.prev.nz ~ idtime + group:wsi.sc + f(idarea2, model="iid", graph=g, hyper=prior.list$pc.prec) + f(pos.prev.t.minus.1.sc, model = "ar1") + f(idarea, model = "besag", graph = g, hyper=prior.list$pc.prec) + x.sc + y.sc - 1 - group
+x.c <- data.frame(uid.c = WIDat.hunt.y$uid,
+                  year.c = WIDat.hunt.y$year,
+                  idtime.c = WIDat.hunt.y$idtime,
+                  idtime3.c =WIDat.hunt.y$idtime,
+                  idtime2.c = WIDat.hunt.y$idtime,
+                  idarea.c = WIDat.hunt.y$idarea,
+                  idarea2.c = WIDat.hunt.y$idarea,
+                  wsi.c = WIDat.hunt.y$wsi,
+                  x.c = WIDat.hunt.y$x,
+                  y.c = WIDat.hunt.y$y,
+                  nSamp.c = WIDat.hunt.y$nSamp,
+                  cv.diff.c = WIDat.hunt.y$cv.diff,
+                  fd.diff.c = WIDat.hunt.y$fd.diff,                  
+                  prop.MA.c = WIDat.hunt.y$prop.MA,
+                  prop.MY.c = WIDat.hunt.y$prop.MY,
+                  prop.FA.c = WIDat.hunt.y$prop.FA,
+                  prop.FY.c = WIDat.hunt.y$prop.FY,
+                  nMA.c = WIDat.hunt.y$nMA,
+                  nMY.c = WIDat.hunt.y$nMY,
+                  nFA.c = WIDat.hunt.y$nFA,
+                  nFY.c = WIDat.hunt.y$nFY,
+                  nPMA.c = WIDat.hunt.y$nPMA,
+                  nPMY.c = WIDat.hunt.y$nPMY,
+                  nPFA.c = WIDat.hunt.y$nPFA,
+                  nPFY.c = WIDat.hunt.y$nPFY,
+                  nPos.t.minus.1.c = WIDat.hunt.y$nPos.t.minus.1,
+                  snopack.max.c = WIDat.hunt.y$snopackMax,
+                  numDays0sno.c = WIDat.hunt.y$numDays0sno,
+                  numDayssno.c = WIDat.hunt.y$numDays,
+                  wsi.early.c = WIDat.hunt.y$wsi.early,
+                  wsi.ttl.c = WIDat.hunt.y$wsi.ttl,
+                  wsi.late.c = WIDat.hunt.y$wsi.late,
+                  pop.c = WIDat.hunt.y$pop
+)
 
-f.hurdle.pc.3 <- pos.prev.nz ~ idtime + wsi.sc + f(idarea2, model="iid", graph=g, hyper=prior.list$pc.prec) + f(pos.prev.t.minus.1.sc, model = "ar1") + f(idarea, model = "besag", graph = g, hyper=prior.list$pc.prec) + x.sc + y.sc
+stack.c <- inla.stack(
+  tag="fit.c",
+  data=list(all.prev=cbind(WIDat.hunt.y$nPos.c,NA)),
+  A = list(1),
+  effects = list(
+    x.c = as.data.frame(x.c)
+  )
+)
+stack.0 <- inla.stack(
+  tag="fit.0",
+  data=list(all.prev=cbind(NA,WIDat.hunt.y$nPos.z)),
+  A = list(1),
+  effects = list(
+    x.0 = as.data.frame(x.0)
+  ))
+
+stack.t <- inla.stack(stack.c, stack.0)
+f.hurdle.wsi.total <- all.prev ~ -1 +
+ offset(log(nSamp.c)) + prop.MA.c + f(idtime2.0, model="iid") + f(idtime2.c, model="iid") + 
+  scale(wsi.ttl.0) + f(idarea.c, model = "bym", graph = g, scale.model=TRUE) +
+  f(idtime3.c, model="ar1") + f(idtime3.0, model="ar1") + 
+  scale(wsi.ttl.c) + f(idarea.0, model = "bym", graph = g, scale.model=TRUE) + scale(pop.0) + scale(pop.c) + offset(log(nSamp.0)) + prop.MA.0
 
 
-f.hurdle.pc.4 <- f(pos.prev.t.minus.1.sc.0, model = "ar1") + f(idarea.0, model = "besag", graph = g, hyper=prior.list$pc.prec, scale.model=TRUE) + x.0 + y.0 + f(idarea2.0, model="iid", graph=g, hyper=prior.list$pc.prec) + nSamp.0 + group.0 + group.0:wsi.0 + f(idtime2.0, model="iid") + idtime0 + wsi.0
+f.hurdle.wsi.late <- all.prev ~ -1 +
+ offset(nSamp.c) + prop.MA.c + f(idtime2.0, model="iid") + f(idtime2.c, model="iid") + 
+  scale(wsi.late.c) + f(idarea.c, model = "bym", graph = g, scale.model=TRUE) +
+  f(idtime3.c, model="ar1") + f(idtime3.0, model="ar1") + 
+  scale(wsi.late.0) + f(idarea.0, model = "bym", graph = g, scale.model=TRUE) +
+  prop.MA.0 + scale(pop.0) + scale(pop.c) + offset(nSamp.0)
+
+f.hurdle.wsi.early <- all.prev ~ -1 +
+ offset(nSamp.c) + prop.MA.c + f(idtime2.0, model="iid") + f(idtime2.c, model="iid") + 
+  scale(wsi.early.c) + f(idarea.c, model = "bym", graph = g, scale.model=TRUE) +
+  scale(cv.diff.c) + f(idtime3.c, model="ar1") + f(idtime3.0, model="ar1") + 
+  scale(wsi.early.0) + scale(cv.diff.0) + f(idarea.0, model = "bym", graph = g, scale.model=TRUE) + prop.MA.0 + scale(pop.0) + scale(pop.0) + scale(pop.c) + offset(nSamp.0)
+
+f.hurdle.0.sno <- all.prev ~ -1 +
+ offset(nSamp.c) + prop.MA.c + f(idtime2.0, model="iid") + f(idtime2.c, model="iid") + 
+  scale(numDays0sno.c) + f(idarea.c, model = "bym", graph = g, scale.model=TRUE) +
+  f(idtime3.c, model="ar1") + f(idtime3.0, model="ar1") + 
+  scale(numDays0sno.0) +
+  f(idarea.0, model = "bym", graph = g, scale.model=TRUE) +
+  prop.MA.0 + scale(pop.0) + scale(pop.c) + offset(nSamp.0)
+
+f.hurdle.max.snopack <- all.prev ~ -1 + scale(pop.c) + 
+ offset(nSamp.c) + prop.MA.c + f(idtime2.0, model="iid") + f(idtime2.c, model="iid") + 
+  scale(snopack.max.c) + f(idarea.c, model = "bym", graph = g, scale.model=TRUE) +
+  f(idtime3.c, model="ar1") + f(idtime3.0, model="ar1") + 
+  scale(snopack.max.0) + f(idarea.0, model = "bym", graph = g, scale.model=TRUE)+ 
+  prop.MA.0 + scale(pop.0) + offset(nSamp.0)
+
+f.hurdle.num.sno.days <- all.prev ~ -1 +
+  offset(nSamp.c) + prop.MA.c + f(idtime2.0, model="iid") +
+  f(idtime2.c, model="iid") + scale(numDayssno.c) +
+  f(idarea.c, model = "bym", graph = g, scale.model=TRUE) +
+  f(idtime3.c, model="ar1") + f(idtime3.0, model="ar1") + 
+  scale(numDayssno.0) + f(idarea.0, model = "bym", graph = g, scale.model=TRUE) +
+  prop.MA.0 + scale(pop.0) + scale(pop.c) + offset(nSamp.0)
+
+hurdle.out.wsi.total<-inla(f.hurdle.wsi.total,
+        family=c("zeroinflatednbinomial0", "binomial"),                                                       data=inla.stack.data(stack.t),                                                   control.compute=list(dic=TRUE,waic=TRUE, config=TRUE), control.predictor=list(link=1,A=inla.stack.A(stack.t)),
+control.inla=list(strategy='simplified.laplace'))
 
 
-hurdle.out.pc.4<-inla(f.hurdle.pc.3,
-                      data=WITimeSeries4,
-                      family=c("nbinomial"),
-                      control.compute=list(dic=TRUE,waic=TRUE),
-                      control.predictor=list(link=1))
+f.negbin <- nPos ~ -1 + offset(log(nSamp)) + scale(prop.MA) + f(idtime2, model="iid") + scale(wsi.ttl) + f(idarea, model = "bym", graph = g, scale.model=TRUE) + f(idtime, model="ar1") + scale(pop) + idtime3
+# fit WSI total with no joint
+
+f.negbin.0.sno <- nPos ~ -1 + offset(log(nSamp)) + prop.MA + f(idtime2, model="iid") + scale(numDays0sno) + f(idarea, model = "bym", graph = g, scale.model=TRUE) + f(idtime, model="ar1") + scale(pop)
+
+
+f.negbin.snopack.max <- nPos ~ -1 + offset(log(nSamp)) + scale(prop.MA) + f(idtime2, model="iid") + scale(snopackMax) + f(idarea, model = "bym", graph = g, scale.model=TRUE) + f(idtime, model="ar1") + scale(pop)
+
+out.negbin<-inla(f.negbin, family=c("nbinomial"), data=WIDat.hunt.y, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE),
+     control.predictor=list(link=1), control.inla=list(strategy='simplified.laplace'))
+
+out.negbin.0.sno<-inla(f.negbin.0.sno, family=c("nbinomial"), data=WIDat.hunt.y, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE),
+     control.predictor=list(link=1), control.inla=list(strategy='simplified.laplace'))
+
+
+out.negbin.snopack.max<-inla(f.negbin.snopack.max, family=c("nbinomial"), data=WIDat.hunt.y, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE),
+     control.predictor=list(link=1), control.inla=list(strategy='simplified.laplace'))
+
+shurdle.out.wsi.early<-inla(f.hurdle.wsi.early,
+        family=c("zeroinflatednbinomial0", "binomial"),                                                       data=inla.stack.data(stack.t),                                                   control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1,A=inla.stack.A(stack.t)),
+control.inla=list(strategy='simplified.laplace'))
+
+
+hurdle.out.wsi.late<-inla(f.hurdle.wsi.late,
+        family=c("zeroinflatednbinomial0", "binomial"),                                                       data=inla.stack.data(stack.t),                                                   control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1,A=inla.stack.A(stack.t)),
+control.inla=list(strategy='simplified.laplace'))
+
+
+hurdle.out.num.snodays<-inla(f.hurdle.num.sno.days,
+        family=c("zeroinflatednbinomial0", "binomial"),                                                       data=inla.stack.data(stack.t),                                                   control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1,A=inla.stack.A(stack.t)),
+control.inla=list(strategy='simplified.laplace'))
+
+hurdle.out.max.snopack<-inla(f.hurdle.max.snopack,
+        family=c("zeroinflatednbinomial0", "binomial"),                                                       data=inla.stack.data(stack.t),                                                   control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1,A=inla.stack.A(stack.t)),
+control.inla=list(strategy='simplified.laplace'))
+
+hurdle.out.0.sno<-inla(f.hurdle.0.sno,
+        family=c("zeroinflatednbinomial0", "binomial"),                                                       data=inla.stack.data(stack.t),                                                   control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1,A=inla.stack.A(stack.t)),
+control.inla=list(strategy='simplified.laplace'))
+# get raw resids
+# for count part
+logit.out<-data.frame(obs=WIDat.hunt.y$nPos.z, exp=abs(hurdle.out.fixed.sex.wsi.time.coords.nSamp0.cv.y$residuals$deviance.residuals[(nrow(WIDat.hunt.y)+1):(2*nrow(WIDat.hunt.y))]), exp=(WIDat.hunt.y$prop.MA +
+WIDat.hunt.y$idtime + WIDat.hunt.y$cv.diff +  WIDat.hunt.y$nPos.t.minus.1) + WIDat.hunt.y$wsi)
+
+ggplot(logit.out, aes(exp.1,obs))+theme_bw()+
+    geom_point(position = position_jitter(w = 2, h = 0.05), size=3) +
+    geom_smooth(colour="red") + xlab("Expectation") +
+    ylab("Detection = 1")
+
+
+```
+
+```{r using same model make predictions}
+x.pred <- data.frame(uid = WIDat.hunt.y$uid,
+                     year = WIDat.hunt.y$year,
+                     idtime = WIDat.hunt.y$idtime,
+                     idtime2 = WIDat.hunt.y$idtime,
+                     idtime3= WIDat.hunt.y$idtime,
+                     idarea = WIDat.hunt.y$idarea,
+                     idarea2 = WIDat.hunt.y$idarea,
+                     wsi = WIDat.hunt.y$wsi,
+                     x = WIDat.hunt.y$x,
+                     y = WIDat.hunt.y$y,
+                     nSamp = WIDat.hunt.y$nSamp,
+                     cv.diff = WIDat.hunt.y$cv.diff,
+                     fd.diff = WIDat.hunt.y$nMY,
+                     fd.diff = WIDat.hunt.y$fd.diff,
+                     fd.diff = WIDat.hunt.y$fd.diff,
+                     fd.diff = WIDat.hunt.y$fd.diff, 
+                     prop.MA = WIDat.hunt.y$prop.MA,
+                     prop.MY = WIDat.hunt.y$prop.MY,
+                     prop.FA = WIDat.hunt.y$prop.FA,
+                     prop.FY = WIDat.hunt.y$prop.FY,
+                     nMA = WIDat.hunt.y$nMA,
+                     nMY = WIDat.hunt.y$nMY,
+                     nFA = WIDat.hunt.y$nFA,
+                     nFY = WIDat.hunt.y$nFY,
+                     nPMA = WIDat.hunt.y$nPMA,
+                     nPMY = WIDat.hunt.y$nPMY,
+                     nPFA = WIDat.hunt.y$nPFA,
+                     nPFY = WIDat.hunt.y$nPFY,
+                     nPos.t.minus.1 = WIDat.hunt.y$nPos.t.minus.1,
+                     snopack.max = WIDat.hunt.y$snopackMax,
+                     numDays0sno = WIDat.hunt.y$numDays0sno,
+                     numDayssno = WIDat.hunt.y$numDays,
+                     wsi.early = WIDat.hunt.y$wsi.early,
+                     wsi.ttl = if_else(WIDat.hunt.y$wsi.ttl==0,0, WIDat.hunt.y$wsi.ttl- 1),
+                     wsi.late = WIDat.hunt.y$wsi.late,
+                     pop = WIDat.hunt.y$pop
+)
+
+x.dat <- data.frame(uid = WIDat.hunt.y$uid,
+                    year = WIDat.hunt.y$year,
+                    idtime = WIDat.hunt.y$idtime,
+                    idtime3 =WIDat.hunt.y$idtime,
+                    idtime2 = WIDat.hunt.y$idtime,
+                    idarea = WIDat.hunt.y$idarea,
+                    idarea2 = WIDat.hunt.y$idarea,
+                    wsi = WIDat.hunt.y$wsi,
+                    x = WIDat.hunt.y$x,
+                    y = WIDat.hunt.y$y,
+                    nSamp = WIDat.hunt.y$nSamp,
+                    cv.diff = WIDat.hunt.y$cv.diff,
+                    fd.diff = WIDat.hunt.y$fd.diff,                  
+                    prop.MA = WIDat.hunt.y$prop.MA,
+                    prop.MY = WIDat.hunt.y$prop.MY,
+                    prop.FA = WIDat.hunt.y$prop.FA,
+                    prop.FY = WIDat.hunt.y$prop.FY,
+                    nMA = WIDat.hunt.y$nMA,
+                    nMY = WIDat.hunt.y$nMY,
+                    nFA = WIDat.hunt.y$nFA,
+                    nFY = WIDat.hunt.y$nFY,
+                    nPMA = WIDat.hunt.y$nPMA,
+                    nPMY = WIDat.hunt.y$nPMY,
+                    nPFA = WIDat.hunt.y$nPFA,
+                    nPFY = WIDat.hunt.y$nPFY,
+                    nPos.t.minus.1 = WIDat.hunt.y$nPos.t.minus.1,
+                    snopack.max = WIDat.hunt.y$snopackMax,
+                    numDays0sno = WIDat.hunt.y$numDays0sno,
+                    numDayssno = WIDat.hunt.y$numDays,
+                    wsi.early = WIDat.hunt.y$wsi.early,
+                    wsi.ttl = WIDat.hunt.y$wsi.ttl,
+                    wsi.late = WIDat.hunt.y$wsi.late,
+                    pop = WIDat.hunt.y$pop
+)
+
+
+# make a prediction stack
+stk.pred <- inla.stack(tag="fit.pred",
+  data=list(nPos=NA),
+  A = list(1),
+  effects = list(
+    x.pred = as.data.frame(x.pred)
+  )) 
+  # make a prediction stack
+stk.dat <- inla.stack(tag="fit.dat",
+  data=list(nPos=WIDat.hunt.y$nPos),
+  A = list(1),
+  effects = list(
+    x.dat = as.data.frame(x.dat)
+  ))
+
+stk.full <- inla.stack(stk.dat, stk.pred)
+f.negbin <- nPos ~ -1 + offset(log(nSamp)) + prop.MA + f(idtime2, model="iid") + scale(wsi.ttl) + f(idarea, model = "bym", graph = g, scale.model=TRUE) + f(idtime, model="ar1") + scale(pop)
+
+# fit WSI total with no joint
+out.negbin.dat<-inla(f.negbin, family=c("nbinomial"), data=WIDat.hunt.yf, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE),
+     control.predictor=list(link=1), control.inla=list(strategy='simplified.laplace'))
+
+
+hurdle.out.wsi.late<-inla(f.hurdle.wsi.late,
+        family=c("zeroinflatednbinomial0", "binomial"),                                                       data=inla.stack.data(stack.t),                                                   control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1,A=inla.stack.A(stack.t)),
+control.inla=list(strategy='simplified.laplace'))
+
+```
+
+
+
+```{r sex models}
+```
+
+# split into age and sex class models
+
+
+```{r transform nPos.t.minus.1 }
+
+```
+
+
+
+```{r male adult}
+WIDatSexSplitM <- WIDatSexSplitM %>% arrange(year, uid)
+# analysis for long
+WIDatSexSplitM$nPM.0 <- if_else(WIDatSexSplitM$nPos > 0, 1, WIDatSexSplitM$nPos)
+WIDatSexSplitM$nPM.c <- if_else(WIDatSexSplitM$nPos == 0, NA, WIDatSexSplitM$nPos)
+WIDatSexSplitM <- WIDatSexSplitM %>% filter(year < 2022)
+WIDatSexSplitM$idarea <- as.numeric(as.factor(WIDatSexSplitM$uid))
+WIDatSexSplitM$idarea2 <- as.numeric(as.factor(WIDatSexSplitM$uid))
+WIDatSexSplitM$idtime <- 1 + as.numeric(WIDatSexSplitM$year) - min(as.numeric(WIDatSexSplitM$year))
+WIDatSexSplitM$idtime2 <- 1 + as.numeric(WIDatSexSplitM$year) - min(as.numeric(WIDatSexSplitM$year))
+cwdDat.wide <- reshape(WIDatSexSplitM, timevar="year", idvar=c("uid"), direction="wide")
+wiTwnshpPoly <- as(wiStudyShp, "Spatial")
+map <- merge(wiTwnshpPoly, cwdDat.wide, by.x = "uid")
+nb <- poly2nb(map) # create nb object
+nb2INLA("map.adj", nb)
+g <- inla.read.graph(filename = "map.adj")
+# need to transform each of our responses as with above
+x.m.0 <- data.frame(uid.0 = WIDatSexSplitM$uid,
+                  year.0 = WIDatSexSplitM$year,
+                  idtime.0 = WIDatSexSplitM$idtime,
+                  idtime2.0 = WIDatSexSplitM$idtime,
+                  idtime3.0= WIDatSexSplitM$idtime,
+                  idarea.0 = WIDatSexSplitM$idarea,
+                  idarea2.0 = WIDatSexSplitM$idarea,
+                  wsi.0 = WIDatSexSplitM$wsi,
+                  x.0 = WIDatSexSplitM$x,
+                  y.0 = WIDatSexSplitM$y,
+                  nSamp.0 = WIDatSexSplitM$nSamp,
+                  cv.diff.0 = WIDatSexSplitM$cv.diff,
+                  cv.diff.0 = WIDatSexSplitM$cv.diff,
+                  fd.diff.0 = WIDatSexSplitM$fd.diff
+                  )
+
+x.m.c <- data.frame(uid.c = WIDatSexSplitM$uid,
+                  year.c = WIDatSexSplitM$year,
+                  idtime.c = WIDatSexSplitM$idtime,
+                  idtime3.c =WIDatSexSplitM$idtime,
+                  idtime2.c = WIDatSexSplitM$idtime,
+                  idarea.c = WIDatSexSplitM$idarea,
+                  idarea2.c = WIDatSexSplitM$idarea,
+                  wsi.c = WIDatSexSplitM$wsi,
+                  x.c = WIDatSexSplitM$x,
+                  y.c = WIDatSexSplitM$y,
+                  nSamp.c = WIDatSexSplitM$nSamp,
+                  cv.diff.c = WIDatSexSplitM$cv.diff,
+                  fd.diff.c = WIDatSexSplitM$fd.diff                  
+)
+
+
+stack.m.c <- inla.stack(
+  tag="fit.c",
+  data=list(all.prev=cbind(WIDatSexSplitM$nPM.c,NA)),
+  A = list(1),
+  effects = list(
+    x.c = as.data.frame(x.m.c)
+  )
+)
+stack.m.0 <- inla.stack(
+  tag="fit.0",
+  data=list(all.prev=cbind(NA,WIDatSexSplitM$nPM.0)),
+  A = list(1),
+  effects = list(
+    x.0 = as.data.frame(x.m.0)
+  ))
+stack.m.t <- inla.stack(stack.m.c, stack.m.0)
+
+f.hurdle.fixed.sex.wsi.time.coords.nSamp0.cv.y.ma <- all.prev ~ -1 +  idtime.c +
+  f(idarea2.c, model="iid", graph=g) + offset(nSamp.c) +
+  scale(wsi.c) + f(idarea.c, model = "besag", graph = g, scale.model=TRUE) +
+  scale(cv.diff.c) + f(idtime2.c, model = "iid") + f(idtime2.0, model = "iid") +
+  scale(wsi.0) + scale(cv.diff.0) + f(idarea.0, model = "besag", graph = g,   scale.model=TRUE) + f(idarea2.0, model="iid", graph=g) + idtime.0 
+hurdle.out.fixed.sex.wsi.time.coords.nSamp0.cv.y.ma<-inla(f.hurdle.fixed.sex.wsi.time.coords.nSamp0.cv.y.ma, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.m.t), control.compute=list(dic=TRUE,waic=TRUE,residuals=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.m.t)))
+
+```
+
+```{r female adult}
+
+# need to transform each of our responses as with above
+WIDat.hunt.y$nPFA.0 <- if_else(WIDat.hunt.y$nPFA > 0, 1, WIDat.hunt.y$nPFA) 
+WIDat.hunt.y$nPFA.c <- if_else(WIDat.hunt.y$nPFA == 0, NA, WIDat.hunt.y$nPFA)
+
+stack.fa.c <- inla.stack(
+  tag="fit.c",
+  data=list(all.prev=cbind(WIDat.hunt.y$nPFA.c,NA)),
+  A = list(1),
+  effects = list(
+    x.c = as.data.frame(x.c)
+  )
+)
+stack.fa.0 <- inla.stack(
+  tag="fit.0",
+  data=list(all.prev=cbind(NA,WIDat.hunt.y$nPFA.0)),
+  A = list(1),
+  effects = list(
+    x.0 = as.data.frame(x.0)
+  ))
+stack.t.fa <- inla.stack(stack.fa.c, stack.fa.0)
+
+f.hurdle.fixed.sex.wsi.time.coords.nSamp0.cv.y.fa <- all.prev ~ -1 +  idtime.c +
+  f(idarea2.c, model="iid", graph=g) + offset(nFA.c) +
+  scale(wsi.c) + f(idarea.c, model = "besag", graph = g, scale.model=TRUE) +
+  scale(cv.diff.c) + f(idtime2.c, model = "iid") + f(idtime2.0, model = "iid") +
+  scale(wsi.0) + scale(cv.diff.0) + f(idarea.0, model = "besag", graph = g,   scale.model=TRUE) + f(idarea2.0, model="iid", graph=g) + idtime.0 
+hurdle.out.fixed.sex.wsi.time.coords.nSamp0.cv.y.fa<-inla(f.hurdle.fixed.sex.wsi.time.coords.nSamp0.cv.y.fa, family=c("zeroinflatednbinomial0", "binomial"), data=inla.stack.data(stack.t.fa), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t.fa)))
+```
+```{r}
+
+```
+
+```{r sensitivity analysis}
+UN.prior = "expression:
+  log_dens = 0 - log(2) - theta / 2;
+  return(log_dens);
+"
+
+prior.list = list(
+  uniform = list(prec = list(prior = UN.prior)),
+  pc.prec = list(prec = list(prior = "pc.prec", param = c(5, 0.01)))
+
+)
+
+prior.list.0 = list(
+  default = list(prec = list(prior = "loggamma", param = c(1, 0.00005))),
+  pc.prec = list(prec = list(prior = "pc.prec", param = c(5, 0.01))),
+  uniform = list(prec = list(prior = "uniform", param = c(0,100)))  
+)
+
+# this call works for lapply, the  binomial doesn't have any hyperpars
+# 
+#     inla(all.prev ~ -1 +  idtime.c +
+# f(idarea2.c, model="iid", graph=g, hyper=tau.prior) + f(pos.prev.t.minus.1.c, model = "ar1", hyper=tau.prior) +
+# scale(wsi.c) + male.c + scale(y.c) + f(idarea.c, model = "besag", graph = g, hyper=tau.prior) +
+# scale(cv.diff.c) + f(idtime2.c, model = "iid", tau.prior) + f(idtime2.0, model = "iid") + 
+# f(pos.prev.t.minus.1.0, model = "ar1")+ male.0 + scale(wsi.0) + scale(cv.diff.0) +
+# f(idarea.0, model = "besag", graph = g, scale.model=TRUE) + 
+# f(idarea2.0, model="iid", graph=g) + scale(y.0) + idtime.0 + scale(nSamp.0), family=c("zeroinflatednbinomial0", "binomial"),
+#                data=inla.stack.data(stack.t),
+#                control.compute=list(dic=TRUE,waic=TRUE),
+#                control.predictor=list(link=1, A=inla.stack.A(stack.t)),
+#                control.family = list(list(hyper=list(theta = list(prior = "pc.prec", param = c(5, 0.01)))),
+#                                      list()))
+
+
+# want to try priors suggested by Fieberg for the binomial distribution
+
+sens.out<-lapply(prior.list, function(tau.prior) {
+    inla(all.prev ~ -1 +  idtime.c +
+f(idarea2.c, model="iid", graph=g, hyper=tau.prior) + f(pos.prev.t.minus.1.c, model = "ar1", hyper=tau.prior) +
+scale(wsi.c) + male.c + scale(y.c) + f(idarea.c, model = "besag", graph = g, hyper=tau.prior) +
+scale(cv.diff.c) + f(idtime2.c, model = "iid", hyper=tau.prior) + f(idtime2.0, model = "iid", hyper=tau.prior) + 
+f(pos.prev.t.minus.1.0, model = "ar1")+ male.0 + scale(wsi.0) + scale(cv.diff.0) +
+f(idarea.0, model = "besag", graph = g, scale.model=TRUE, hyper=tau.prior) + 
+f(idarea2.0, model="iid", graph=g, hyper=tau.prior) + scale(y.0) + idtime.0 + scale(nSamp.0), family=c("zeroinflatednbinomial0", "binomial"),
+               data=inla.stack.data(stack.t),
+               control.compute=list(dic=TRUE,waic=TRUE),
+               control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+    })
+
 
 
 
 ```
+
+```{r}
+# plot results of posterior
+hurdle.out.fixed.sex.wsi.time.coords.nSamp0.cv.y$names.fixed
+names<-c("year","proportion male","WSI","neighborhood cover difference",
+"WSI","neighborhood cover difference","idtime", "proportion male")
+component<- c("nbinom","nbinom","nbinom","nbinom","binom","binom","binom","binom")
+postDat <- data.frame(name = names, component=component)
+postDat$est <- hurdle.out.fixed.sex.wsi.time.coords.nSamp0.cv.y$summary.fixed$mean
+postDat$LCL <- hurdle.out.fixed.sex.wsi.time.coords.nSamp0.cv.y$summary.fixed$'0.025quant'
+postDat$UCL <- hurdle.out.fixed.sex.wsi.time.coords.nSamp0.cv.y$summary.fixed$'0.975quant'
+
+ggplot(postDat, aes(component, est)) +
+  geom_errorbar(aes(ymin=LCL, ymax=UCL), width=0.2) +
+  facet_wrap(~name, scales="free") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
 
 ```{r INLA model validation}
 # hurdle model
@@ -1003,7 +1212,6 @@ groups <- c("FA", "FY", "FJ",
 hurdle.out.dat <- data.frame(groups=groups, mean=0, LCI=0, UCI=0)
 for(i in 1:length(groups)){
   hurdle.out.dat[i,]$mean = hurdle.out.pc.4$summary.fixed[paste0("group", groups[i], ":wsi.sc"),]$mean
-  hurdle.out.dat[i,]$LCI = hurdle.out.pc.4$summary.fixed[paste0("group", groups[i], ":wsi.sc"),]$"0.025quant"
   hurdle.out.dat[i,]$UCI = hurdle.out.pc.4$summary.fixed[paste0("group", groups[i], ":wsi.sc"),]$"0.975quant"
 }
 
@@ -1015,378 +1223,98 @@ ggplot(data = hurdle.out.dat, aes(x=groups)) +
   geom_point(aes(y=mean)) + 
   geom_errorbar(aes(ymin = LCI, ymax = UCI)) +
     theme_bw()
-DHARMa::testResiduals(residuals(hurdle.out.pc,type="pearson"))
 ```
+```{r validation fit with training and testing data}
+WIDatClean5$pos.prev.0 <- if_else(WIDatClean5$pos.prev==0,0,1)
+WIDatClean5$pos.prev.nz <- if_else(WIDatClean5$pos.prev>0,WIDatClean5$pos.prev,NA)
+
+# for k-fold validation we need to split the data into K=10 folds
+
+set.seed(55407)
+split = c(train=.8, validate=.2)
+
+
+g = sample(cut(
+  seq(nrow(WIDatClean5)), 
+  nrow(WIDatClean5)*cumsum(c(0,split)),
+  labels = names(split)
+))
+
+index_val <- which(g=="validate")
+index_train <- which(g=="train")
+
+WIDatClean5$pos.prev.0.pred <- WIDatClean5$pos.prev.0
+WIDatClean5$pos.prev.0.pred[c(index_val)] <- NA
+
+WIDatClean5$pos.prev.nz.pred <- WIDatClean5$pos.prev.nz
+WIDatClean5$pos.prev.nz.pred[c(index_val)] <- NA
 
 
 
-```{r, 2 years of wsMatMax}
-wsi.mat.scaled <- scale(wsi.mat)
+cwdDat.wide <- reshape(WIDatClean5, timevar="year", idvar=c("uid"), direction="wide")
+wiTwnshpPoly <- as(wiStudyShp, "Spatial")
+map <- merge(wiTwnshpPoly, cwdDat.wide, by.x = "uid", by.y = "uid")
+nb <- poly2nb(map) # create nb object
+nb2INLA("map.adj", nb)
+g <- inla.read.graph(filename = "map.adj")
+# table for combined zero and count process
+f.hurdle.joint <- all.prev ~  idtime.nz + scale(wsi.nz) + male.nz + MY.prev.t.samp.sc.nz + wsi.nz:FY.prev.sc.nz + f(idtime2.nz, model="iid") + f(idarea2.nz, model="iid", graph=g, hyper=prior.list$pc.prec) + f(pos.prev.t.minus.1.sc.nz, model = "ar1") + cv.nz + fd.nz + f(idarea.nz, model = "besag", graph = g, hyper=prior.list$pc.prec)  + f(idtime2.0, model="iid") + idtime0 + wsi.0 + MA.prev.t.samp.sc.0 + MY.prev.t.samp.sc.0 + f(pos.prev.t.minus.1.sc.0, model = "ar1") + f(idarea.0, model = "besag", graph = g, hyper=prior.list$pc.prec, scale.model=TRUE) + x.0 + y.0 + cv.0 + fd.0 + f(idarea2.0, model="iid", graph=g, hyper=prior.list$pc.prec) + nSamp.0
 
-# year samp will be the number of years we're getting CWD samples for
-yearSamp<-c(seq(2003,2022, 1))
-# let's create our expected value
+# total stack
+# stack.t <- inla.stack(stack.nz, sstack.0)
+# 
+# 
+# pred.0 <- stack.t$data
 
-dZIB <- nimbleFunction(
- run = function(x = integer(), prob = double(), zeroProb=double(),
-                theta = double(), log = logical(0, default = 0)) {
-   returnType(double())
-   ## First handle non-zero data
-   if (x != 0) {
-       ## return the log probability if log = TRUE
-     return(dnbinom(x, size=theta, prob=prob, log = TRUE) + log(1 - zeroProb))
-       ## or the probability if log = FALSE
-   }
-   ## From here down we know x is 0
-   totalProbZero<-zeroProb+(1-zeroProb)*dnbinom(0,size=theta,prob=prob,log=FALSE)
-   return(log(totalProbZero))
-   #return(totalProbZero)
- })
+# specify formula
+# f.hurdle.joint <- all.prev ~  idtime.nz + wsi.nz + MA.prev.t.samp.sc.nz + MY.prev.t.samp.sc.nz + wsi.nz:FY.prev.sc.nz + f(idtime2.nz, model="iid") + f(idarea2.nz, model="iid", graph=g, hyper=prior.list$pc.prec) + f(pos.prev.t.minus.1.sc.nz, model = "ar1") + cv.nz + fd.nz + f(idarea.nz, model = "besag", graph = g, hyper=prior.list$pc.prec)  + f(idtime2.0, model="iid") + idtime0 + wsi.0 + MA.prev.t.samp.sc.0 + MY.prev.t.samp.sc.0 + f(pos.prev.t.minus.1.sc.0, model = "ar1") + f(idarea.0, model = "besag", graph = g, hyper=prior.list$pc.prec, scale.model=TRUE) + x.0 + y.0 + cv.0 + fd.0 + f(idarea2.0, model="iid", graph=g, hyper=prior.list$pc.prec) + nSamp.0
+# 
+# 
+# hurdle.out.pc<-inla(f.hurdle.joint, family=c("nbinomial", "binomial"), data=inla.stack.data(stack.t), control.compute=list(dic=TRUE,waic=TRUE), control.predictor=list(link=1, A=inla.stack.A(stack.t)))
+form.hurdle.nz.pred <- pos.prev.nz.pred ~ idtime + f(pos.prev.t.minus.1.sc, model = "ar1") + f(idarea, model = "besag", graph = g, hyper=prior.list$pc.prec) + x.sc + y.sc + fd.diff.sc + cv.diff.sc + wsi.sc
 
-registerDistributions(list(
-    dZIB = list(
-        BUGSdist = "dZIB(prob, zeroProb, theta)",
-        discrete = TRUE,
-        range = c(0, Inf),
-        types = c('value = integer()', 'prob = double()', 'zeroProb = double()', 'theta = double()')
-     )))
+form.hurdle.0.pred <- pos.prev.0.pred ~ idtime + f(pos.prev.t.minus.1.0, model = "ar1") + f(idarea, model = "besag", graph = g, hyper=prior.list$pc.prec) + x.sc + y.sc + fd.diff.sc + cv.diff.sc + wsi.sc + scale(nSamp)[,1]
 
-modelcode <- nimbleCode({
-  
-    ## priors
-    beta0 ~ dnorm(0.0, sd = prec.beta0)  # vague prior on intercept
-    gamma0 ~ dnorm(0.0, sd=prec.gamma0)   
-    beta1~ dnorm(0.0, sd = prec.gamma1)
-    gamma1~ dnorm(0.0, sd = prec.beta1)
-    theta.c ~ dnorm(0.0, sd=prec.theta.c)
-    theta.ci ~ dnorm(0.0, sd=prec.theta.ci)
-    beta1hat ~ dnorm(0.0, sd=prec.beta1hat)
-    gamma1hat ~ dnorm(0.0, sd=prec.gamma1hat)
-    # priors for precision of normal distributions
-    prec.beta0 ~ dgamma(0.001,0.001)
-    prec.gamma0 ~ dgamma(0.001,0.001)
-    prec.gamma1 ~ dgamma(0.001,0.001)
-    prec.beta1 ~ dgamma(0.001,0.001)
-    prec.beta1hat ~dgamma(0.001,0.001)
-    prec.gamma1hat~dgamma(0.001,0.001)
-    prec.theta.c ~dgamma(0.001,0.001)
-    prec.theta.ci ~dgamma(0.001,0.001)
-    mu0 ~ dnorm(0, 0.0001)
-    mu01 ~ dnorm(0,0.0001)
-    
-    prec.c ~ dgamma(0.0001, 0.0001)
-    prec.ci ~ dgamma(0.0001, 0.0001)
-    gmm0 ~ dunif(-1,1)
-    gmm1 ~ dunif(-1,1)
-    # prec.h ~ dgamma(0.1, 0.1)
-    # prec.hi ~ dgamma(0.1, 0.1)
-    ## calculate alpha
-    # sd.c <- sd(phi[1:N]) # marginal SD of heterogeneity effects
-    # sd.h <- sd(theta[1:N])   # marginal SD of clustering (spatial) effects
-    # sd.ci <- sd(psi[1:N]) # marginal SD of heteorgenity effects -- zero inflated process
-    # sd.hi <- sd(theta.i[1:N]) # marginal SD of clustering effects -- zero inflated process
-    # alpha <- sd.h / (sd.c + sd.h)
-    # alpha.i <- sd.hi/(sd.ci + sd.hi)
-    phi[1:N] ~ dcar_proper(m0[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.c,gmm0)
-    psi[1:N] ~ dcar_proper(m1[1:N],C[1:L],adj[1:L],num[1:N],M[1:N], prec.ci,gmm1)
-    # likelihood
-  for (i in 1 : N) {
-    m0[i] <- mu01
-    m1[i] <- mu01
-    for(j in 2: n.years){
-        theta[i,j] ~ dunif(0,50)
-        mu[i,j] <- theta.c*cwd.p[i,j-1] + phi[i] + beta1*precip[i,j]  + beta1hat*precip[i,j-1] + beta0
-        logit(p[i,j]) <- theta.ci*cwd.p[i,j-1] + gamma1*precip[i,j] + gamma1hat*precip[i,j-1]+ psi[i] + gamma0
-        prob[i,j] <- theta[i,j]/(theta[i,j]+mu[i,j])
-        y[i,j] ~ dZIB(prob=prob[i,j],zeroProb=p[i,j],theta=theta[i,j])
-        }
-    }
-     # CAR model for spatial random effects
-})
-## Specify data and initial values
-constants <- list(N = nrow(cwd.mat.analyzed),
-                  mu.hat=cwd.r,
-                  n.years=length(yearSamp),
-                  L = length(W$adj),
-                  adj=W$adj,
-                  weights=W$weights,
-                  num=W$num,
-                  M=wCarCM$M,
-                  C=wCarCM$C)
-data <- list(y = cwd.mat.pos,
-             precip=scale(wsMatMean),
-             cwd.p = scale(cwd.mat.pos))
-inits <- list(beta1=0,
-              beta0=1,
-              theta.c = 0,
-              theta.ci = 0,
-              gamma1=0,
-              gamma0=1,
-              gamma1hat = 0,
-              beta1hat = 0,
-              prec.beta0 = 1,
-              prec.gamma0 = 1,
-              prec.gamma1 = 1,
-              prec.beta1 = 1,
-              prec.theta.c = 1,
-              prec.theta.ci = 1,
-              prec.beta1hat = 1,
-              prec.gamma1hat = 1,
-              prec.c = 1,
-              prec.ci = 1,
-              gmm0 = 0,
-              gmm1 = 0,
-              phi = rep(0, nrow(cwd.mat.pos)),
-              psi = rep(0, nrow(cwd.mat.pos)),
-              m0=rep(0,nrow(cwd.mat.pos)),
-              m1=rep(0,nrow(cwd.mat.pos)),
-              mu=matrix(0,nrow=nrow(cwd.mat.pos),ncol=ncol(cwd.mat.pos)),
-              p = matrix(0, nrow=nrow(cwd.mat.pos), ncol=ncol(cwd.mat.pos)),
-              mu0 = 0,
-              mu01 = 0)
+out.hurdle.nz.pred<-inla(form.hurdle.nz.pred, family=c("nbinomial"), data=WIDatClean5, control.compute=list(dic=TRUE,waic=TRUE),
+     control.predictor=list(link=1),
+     control.fixed = list(mean=0,
+                          prec=1))
+out.hurdle.0.pred<-inla(form.hurdle.0.pred, family=c("binomial"), data=WIDatClean5, control.compute=list(dic=TRUE,waic=TRUE),
+     control.predictor=list(link=1),
+     control.fixed = list(mean=0,
+                          prec=1))
 
-
-## Build/Compile model, including steps:
-## (1) build model (2) compile model in C++
-## (3) specify MCMC parameters to collect and create MCMC algorithm
-cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
-c.cwdspatmodel <- compileNimble(cwdspatmodel, resetFunctions = TRUE)
-
-confMC <- configureMCMC(cwdspatmodel, monitors = c('beta0', 'beta1',
-                                                   'gamma1','gamma0',
-                                                   'beta1hat', 'gamma1hat',
-                                                   'theta.c', 'theta.ci'
-                                                  ),
-                        enableWAIC = TRUE)
-cwdspatmcmc <- buildMCMC(confMC)
-c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel, resetFunctions = TRUE)## Run MCMC
-
-# theta <- rep(0, nrow(cwd.mat.pos))
-# theta.i <- rep(0, nrow(cwd.mat.pos))
-mcmc.out <- runMCMC(c.cwdspatmcmc,
-                    niter=36000,
-                    nburnin=30000, # should use 10k for a burnin period
-                    thin = 2,
-                    nchains=4,
-                    WAIC=TRUE)
-## convert post samples as mcmc.list object and diagnose convergence using coda functions
-post.samples <- mcmc.list(sapply(mcmc.out$samples,
-                                 as.mcmc,simplify=FALSE))
-pars <- c("beta0",'gamma0','beta1hat', 'gamma1hat', 'beta1', 'gamma1', 'theta.c', 'theta.ci')
-plot(post.samples, trace=TRUE, density=FALSE)
-gelman.plot(post.samples)
-autocorr.plot(post.samples)
-## posterior summary
-summary(post.samples)
-## model assessment using WAIC value
-mcmc.out$WAIC
-```
-
-```{r, 2 years of winter effect WSI-Score ZIB}
-
-cwdMat2 <- cwdDat2[,-c(1,2)]
-cwdMat2 <- cwdMat
-cwdMat <- matrix(0,nrow=nrow(cwdMat2), ncol=(ncol(cwdMat2)+1))
-cwdMat2[1770,4] <- NA
-for(i in 1:nrow(cwdMat2)){
-  for(j in 1:ncol(cwdMat2)){
-    cwdMat[i,j] <- as.numeric(cwdMat2[i,j])
-  }
+RMSE <- function(set,outcome,data,fit){
+  res = data[set,outcome]-fit[set]
+  RMSE_val <- sqrt(mean(res^2,na.rm=T)) 
+  return(RMSE_val)  
 }
-cwdMat[,4] <- scale(cwdMat[,4])[,1]
-cwdMat[,5] <- scale(cwdMat[,5])[,1]
-#cwdMat[,ncol(cwdMat)-1] <- scale(cwdMat[,ncol(cwdMat)])[,1]
-cwdMat[,ncol(cwdMat)] <- scale(cwdMat[,1])[,1]
-Nparms <- 4
-# cwdMat[,1] <- round((cwdMat[,1]/cwdMat[,ncol(cwdMat)]) * 1000) # get # pos per 1000
-# cwdMat[,4] <- round((cwdMat[,4]/cwdMat[,ncol(cwdMat)]) * 1000) # get # male per 1000
-# cwdMat[,5] <- round((cwdMat[,5]/cwdMat[,ncol(cwdMat)]) * 1000) # get # fem per 1000
 
-
-write.table(cwdMat, "./data/cwd-mat-long")
-cwdMat<-read.table("./data/cwd-mat-long")
-for(i in 1:nrow(cwdMat)){
-  for(j in 1:ncol(cwdMat)){
-    if(is.null(cwdMat[i,j])){
-      cwdMat[i,j] <- 0
-    }
-  }
+pseudo_r2 <- function(set,outcome,data,fit){
+  res =  data[set,outcome]-fit[set]
+  RRes=sum((res)^2,na.rm = T)
+  RRtot=sum((data[set,outcome]-mean(fit[set],na.rm=T))^2,na.rm = T)
+  pseudo_r2_val=1-RRes/RRtot
+  return(pseudo_r2_val)  
 }
-# year samp will be the number of years we're getting CWD samples for
-yearSamp<-c(seq(2003,2022, 1))
-dZIP <- nimbleFunction(
- run = function(x = integer(), lambda = double(),
-                zeroProb = double(), log = logical(0, default = 0)) {
-   returnType(double())
-      ## First handle non-zero data
-  
-   if (x != 0) {
-     # the probability that it is not generated by our zero process
-     # and the probability that it is generated by the count process
+M_fit=out.hurdle.nz.pred$summary.fitted.values[,"mean"]
+RMSE_val=RMSE(index_val,"pos.prev.nz",WIDatClean5,M_fit)
+RMSE_train=RMSE(index_train,"pos.prev.nz",WIDatClean5,M_fit)
 
-     return((1-zeroProb)*dpois(x,lambda))
-   }
-   # if it is a zero then it could be produced by the count process
-   # and also (therefore) not be structural OR
-   # it is non-structural (dbinom)
-   totalProbZero <- zeroProb + (1 - zeroProb) * dpois(0, lambda, log = FALSE)
-   return(totalProbZero)   
- })
-rZIP <- nimbleFunction(
- run = function(n = integer(), lambda = double(),
-                zeroProb = double()) {
-   returnType(integer())
-   # if the zero-probability is high rbinom returns 1 returns 1
-   # and thus rZIP returns 0; this is a structural zero
-    isStructural = rbinom(1,prob=zeroProb,size=1) 
-    if(isStructural) return(0)
-    # if it wasn't a structural zero, then return rpois(lambda)
-    # could still return non-structural zeros
-    return(rpois(1,lambda))
- })
+r2_val=pseudo_r2(index_val,"pos.prev.nz",WIDatClean5,M_fit)
+r2_train=pseudo_r2(index_train,"pos.prev.nz",WIDatClean5,M_fit)
 
-# let's create our expected value
-registerDistributions(list(
-    dZIP = list(
-        BUGSdist = "dZIP(lambda, zeroProb)",
-        discrete = TRUE,
-        range = c(0, Inf),
-        types = c('value = integer()', 'lambda = double()', 'zeroProb = double()')
-     )))
+WIDatClean5$set <- "" 
+WIDatClean5[index_val,]$set <-"validation"
+WIDatClean5[index_train,]$set <- "train"
 
-modelcode <- nimbleCode({
-
-     # CAR mod
-    # likelihood
-for(j in 2: (n.years)){  
-      for (i in 1 : N) {
-        # beta[4] male
-        #phi.t.minus.1 <- theta[j,1] * (beta[1]*y[(N*(j-1)+i),2] + beta[2]*y[(N*(j-2)+i),1])
-        log(lambda[((N*(j-2))+i)]) <-  beta[1]*y[(N*(j-1)+i),2] + beta[2]*y[(N*(j-2)+i),Ncol] + beta[3]*j + phi[i]
-        # time lag term for zero process
-        #phi.hat.t.minus.1 <- theta[j,2] * (beta.hat[1]*y[(N*(j-1)+i),2] + beta.hat[2]*y[(N*(j-2)+i),1])
-        logit(p[((N*(j-2))+i)]) <-  beta.hat[1]*y[(N*(j-1)+i),2] + beta.hat[2]*y[(N*(j-2)+i),Ncol] + beta.hat[3]*j + phi.hat[i]
-        y[(N*(j-1)+i), 1] ~ dZIP(lambda[((N*(j-2))+i)],p[((N*(j-2))+i)])  
-        }
-    }
-    ## priors
-
-    for(i in 1:Nparms){
-      # hyperpriors for reg coeff
-      prec.beta[i] ~ dgamma(0.1, 0.1)
-      prec.beta.hat[i]~ dgamma(0.1, 0.1)
-      beta[i] ~ dnorm(0.0, prec.beta[i])
-      beta.hat[i]~ dnorm(0.0, prec.beta.hat[i])
-    }
-  prec.c ~ dgamma(0.1, 0.1)
-  prec.c.hat ~dgamma(0.1,0.1)
-
-  phi[1:N] ~ dcar_normal(adj[1:L], weights[1:L], num[1:N],
-                           prec.c, zero_mean=0)
-  phi.hat[1:N] ~ dcar_normal(adj[1:L], weights[1:L], num[1:N],
-                           prec.c.hat, zero_mean=0)
-  
-
-    # beta 0 captures unstructured heterogeneity in the count and zero processes
-  # for(j in 2:n.years){
-  #   for(i in 1:N){
-  #     prec.beta0[(N*(j-2)) + i] ~ dgamma(0.01,0.01)
-  #     prec.beta0.hat[(N*(j-2)) + i] ~ dgamma(0.01,0.01)
-  #     beta0[(N*(j-2)) + i] ~ dnorm(0.0,prec.beta0[(N*(j-2)) + i])
-  #     beta0.hat[(N*(j-2)) + i] ~ dnorm(0.0,prec.beta0.hat[(N*(j-2)) + i])
-  #   }
-  # }
-  # prec.theta ~ dgamma(0.01, 0.01)
-  # prec.theta.hat ~ dgamma(0.01, 0.01)
-  # theta ~ dnorm(0,prec.theta)
-  # theta.hat ~ dnorm(0,prec.theta.hat)
-  })
-## Specify data and initial valu)es
-constants <- list(N = length(unique(wiTwnshpShp$uid)),
-                  n.years=19,
-                  Ncol = ncol(cwdMat),
-                  Nparms = Nparms,
-                  L = length(W$adj),
-                  adj=W$adj,
-                  num=W$num,
-                  weights = W$weights
-                  )
-                  #M=wCarCM$M,
-                  #C=wCarCM$C)
-data <- list(y = cwdMat)
-inits <- list(lambda = rep(0,length(unique(wiTwnshpShp$uid))*19),
-              p = rep(0,length(unique(wiTwnshpShp$uid))*19),
-              beta0  = rep(0,length(unique(wiTwnshpShp$uid))*19),
-              beta0.hat = rep(0,length(unique(wiTwnshpShp$uid))*19),
-              phi =  rep(0,length(unique(wiTwnshpShp$uid))),
-              phi.hat =  rep(0,length(unique(wiTwnshpShp$uid))),
-              prec.c = 1,
-              prec.c.hat = 1,
-              prec.theta = 1,
-              prec.theta.hat = 1,
-              theta = 0,
-              theta.hat = 0,
-              prec.beta.hat = rep(1,Nparms),
-              prec.beta = rep(1,Nparms),
-              beta = rep(0,Nparms),
-              beta.hat = rep(0,Nparms))
-
-## Build/Compile model, including steps:
-## (1) build model (2) compile model in C++
-## (3) specify MCMC parameters to collect and create MCMC algorithm
-cwdspatmodel <- nimbleModel(modelcode, constants = constants, data = data, inits = inits)
-c.cwdspatmodel <- compileNimble(cwdspatmodel, resetFunctions = TRUE)
-
-confMC <- configureMCMC(cwdspatmodel, monitors = c('beta','beta.hat'),
-                        enableWAIC = TRUE)
-cwdspatmcmc <- buildMCMC(confMC)
-c.cwdspatmcmc <- compileNimble(cwdspatmcmc, project = cwdspatmodel, resetFunctions = TRUE)## Run MCMC
-mcmc.out <- runMCMC(c.cwdspatmcmc,
-                    niter=200000,
-                    nburnin=100000, # should use 10k for a burnin period
-                    thin = 50,
-                    nchains=3,
-                    WAIC=TRUE)
-## convert post samples as mcmc.list object and diagnose convergence using coda functions
-post.samples <- mcmc.list(sapply(mcmc.out$samples,
-                                 as.mcmc,simplify=FALSE))
-
-plot(post.samples, trace=TRUE, density=FALSE)
-gelman.plot(post.samples)
-autocorr.plot(post.samples)
-## posterior summary
-summary(post.samples)
-## model assessment using WAIC value
-mcmc.out$WAIC
-
-mcmc.out$samples
-```
-
-```{r examine posterior-samples}
-
-postSamps<-mcmc.out$samples
-mean(postSamps$chain2[,"gamma1"][])
-```
+ggplot(WIDatClean5, aes(x=pos.prev.nz, y=out.hurdle.nz.pred$summary.fitted.values[,'mean'], group=set, color=set, alpha=set)) + 
+  geom_point() +
+  geom_abline(intercept=0, slope=1)
 
 
-```{r plot NAs for sanity check}
-plot(wiTwnshpShpWSI[,10])
-plot(wiTwnshpShpWSI[which(wiTwnshpShpWSI$uid=="1-10-E"),])  
-
-```
-
-```{r}
-
-set.seed(1)
-for(i in 1:nSamp){
-    c.cwdspatmodel[["beta0"]] <- mcmc.out$samples$chain1[i, "beta0"] 
-    c.cwdspatmodel[["beta1"]] <- mcmc.out$samples$chain1[i, "beta1"]
-    c.cwdspatmodel[["beta1hat"]] <- mcmc.out$samples$chain1[i, "beta1hat"]
-    c.cwdspatmodel[["gamma0"]] <- mcmc.out$samples$chain1[i, "gamma0"]
-    c.cwdspatmodel[["gamma1"]] <- mcmc.out$samples$chain1[i, "gamma1"]
-    c.cwdspatmodel[["gamma1hat"]] <- mcmc.out$samples$chain1[i, "gamma1hat"]
-    c.cwdspatmodel$simulate(simNodes, includeData = TRUE)
-    ppSamples[i, ] <- cmodel[["y"]]
-}
+ggplot(WIDatClean5, aes(x=log(out.hurdle.0.pred$summary.fitted.values[,'mean']), y=pos.prev.0, group=set, color=set, alpha=set)) + 
+  geom_point() +
+  geom_line(aes(x=log(out.hurdle.0.pred$summary.fitted.values[,'mean']),pos.prev.0))  
 
 ```
