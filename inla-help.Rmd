@@ -1,0 +1,1325 @@
+---
+title: "inla-help"
+author: "alex jack"
+date: "2024-07-08"
+output: html_document
+---
+
+```{r load packages, include=FALSE}
+library("raster")
+library("sf")
+library("dplyr")
+library("ggplot2")
+library("stars")
+library(maps)
+library(raster)
+library(INLA)
+library(spdep)
+library(cowplot)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(webshot)
+```
+```{r read in data}
+wiTwnshpShp <- st_read("./data/shapefiles/PLSS_Townships/PLSS_Townships.shp")
+WIDat <- read.table("./data/WIDat.hunt.3")
+```
+```{r helper functions, echo=FALSE}
+pseudo_r2 <- function(observed, predicted){
+  res =  observed-predicted
+  RRes=sum((res)^2,na.rm = T)
+  RRtot=sum((observed-mean(predicted,na.rm=T))^2,na.rm = T)
+  pseudo_r2_val=1-RRes/RRtot
+  return(pseudo_r2_val)  
+}
+```
+
+```{r}
+# order data
+WIDat <- WIDat %>% arrange(year, uid)
+# generate state-based variables 
+# TODO change names to something descriptive before submitting to DRUM
+WIDat$idarea <- as.numeric(as.factor(WIDat$uid))
+WIDat$idarea2 <- as.numeric(as.factor(WIDat$uid))
+WIDat$idtime <- 1 + as.numeric(WIDat$year) - min(as.numeric(WIDat$year))
+WIDat$idtime2 <- 1 + as.numeric(WIDat$year) - min(as.numeric(WIDat$year))
+WIDat$idtime3 <- 1 + as.numeric(WIDat$year) - min(as.numeric(WIDat$year))
+WIDat$idtime4 <- WIDat$idtime3
+WIDat$idarea3 <- WIDat$idarea2
+WIDat$idarea4 <- WIDat$idarea2
+WIDat$idarea.year <- seq(1,nrow(WIDat),1) # unique ID for each unit @ each time point
+wiTwnshpShp$uid <- paste0(wiTwnshpShp$TWP, "-", wiTwnshpShp$RNG, "-", wiTwnshpShp$DIR_ALPHA)
+wiStudyShp <- wiTwnshpShp %>% filter(uid %in% WIDat$uid) %>% arrange(uid)
+cwdDat.wide <- reshape(WIDat, timevar="year", idvar=c("uid"), direction="wide")
+wiTwnshpPoly <- as(wiStudyShp, "Spatial")
+map <- merge(wiTwnshpPoly, cwdDat.wide, by.x = "uid")
+nb <- poly2nb(map) # create nb object
+nb2INLA("map.adj", nb)
+g <- inla.read.graph(filename = "map.adj")
+
+model.selection.dat <- data.frame(name="",
+                                  waic=0,
+                                  dic=0,
+                                  pseudo.r2=0)
+```
+
+
+```{r run model}
+# random effects only and offset only
+f.base <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5))))  + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01))))
+# fit
+out.base<-inla(f.base, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(0.5,0.01)))))
+
+# out with wsi
+
+# add to df
+model.selection.dat[1,]$name <- "base"
+model.selection.dat[1,]$waic <- out.base$waic$waic
+model.selection.dat[1,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+                                             out.base$summary.fitted.values$mean)
+model.selection.dat[1,]$dic<-out.base$dic$dic
+
+# random effects only and offset only
+f.temp <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5))))  + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(temp)
+# fit
+out.temp<-inla(f.temp, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(0.5,0.01)))))
+
+# out with wsi
+
+# add to df
+model.selection.dat[41,]$name <- "base + temp"
+model.selection.dat[41,]$waic <- out.temp$waic$waic
+model.selection.dat[41,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+                                             out.temp$summary.fitted.values$mean)
+model.selection.dat[41,]$dic<-out.temp$dic$dic
+
+
+
+# random effects only and offset only
+f.trend <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime)
+# fit
+out.trend<-inla(f.trend, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(0.5,0.01)))))
+
+# add to df
+model.selection.dat[2,]$name <- "base + year"
+model.selection.dat[2,]$waic <- out.trend$waic$waic
+model.selection.dat[2,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+                                             out.trend$summary.fitted.values$mean)
+model.selection.dat[2,]$dic<-out.trend$dic$dic
+
+# dist to epi
+f.dist.to.epi <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(dist.to.epi)
+# fit
+out.dist.to.epi<-inla(f.dist.to.epi, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(0.5,0.01)))))
+
+# add to df
+model.selection.dat[3,]$name <- "base + distance to epicenter"
+model.selection.dat[3,]$waic <- out.dist.to.epi$waic$waic
+model.selection.dat[3,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+                                             out.dist.to.epi$summary.fitted.values$mean)
+model.selection.dat[3,]$dic<-out.dist.to.epi$dic$dic
+
+# prop male
+f.prop.M <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(prop.M)
+# fit
+out.prop.M<-inla(f.prop.M, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(0.5,0.01)))))
+
+# add to df
+model.selection.dat[4,]$name <- "base + proportion male"
+model.selection.dat[4,]$waic <- out.prop.M$waic$waic
+model.selection.dat[4,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+                                             out.prop.M$summary.fitted.values$mean)
+model.selection.dat[4,]$dic<-out.prop.M$dic$dic
+
+
+# population only
+
+# prop male
+f.pop <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l)
+# fit
+out.pop<-inla(f.prop.M, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(0.5,0.01)))))
+
+# add to df
+model.selection.dat[5,]$name <- "base + population (t-1)"
+model.selection.dat[5,]$waic <- out.pop$waic$waic
+model.selection.dat[5,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+                                             out.pop$summary.fitted.values$mean)
+model.selection.dat[5,]$dic<-out.pop$dic$dic
+
+
+# prop male
+f.fd.diff <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(fd.diff)
+# fit
+out.fd.diff<-inla(f.fd.diff, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(0.5,0.01)))))
+
+# add to df
+model.selection.dat[6,]$name <- "base + food"
+model.selection.dat[6,]$waic <- out.fd.diff$waic$waic
+model.selection.dat[6,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+                                             out.fd.diff$summary.fitted.values$mean)
+model.selection.dat[6,]$dic<-out.fd.diff$dic$dic
+
+f.num.days.zero.sno.pack <- nPos ~ 1 + offset(log(nSamp + 1)) +f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) +  f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(numDays0snopack)
+
+out.num.days.zero.sno.pack<-inla(f.num.days.zero.sno.pack, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+
+
+# add to df
+model.selection.dat[9,]$name <- "base + number of days with 0 snow"
+model.selection.dat[9,]$waic <- out.num.days.zero.sno.pack$waic$waic
+model.selection.dat[9,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.num.days.zero.sno.pack$summary.fitted.values$mean)
+model.selection.dat[9,]$dic<-out.num.days.zero.sno.pack$dic$dic
+
+
+
+f.wsi.avg <- nPos ~ 1 + offset(log(nSamp + 1)) +f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(wsi.avg)
+
+out.wsi.avg<-inla(f.wsi.avg, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+
+# add to df
+model.selection.dat[10,]$name <- "base + wsi"
+model.selection.dat[10,]$waic <- out.wsi.avg$waic$waic
+model.selection.dat[10,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.wsi.avg$summary.fitted.values$mean)
+model.selection.dat[10,]$dic<-out.wsi.avg$dic$dic
+
+
+f.wsi.avg <- nPos ~ 1 + offset(log(nSamp + 1)) +f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(temp)
+
+out.wsi.avg<-inla(f.wsi.avg, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+
+# add to df
+model.selection.dat[11,]$name <- "base + number of days below -17.7C"
+model.selection.dat[11,]$waic <- out.wsi.avg$waic$waic
+model.selection.dat[11,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.wsi.avg$summary.fitted.values$mean)
+model.selection.dat[11,]$dic<-out.wsi.avg$dic$dic
+
+# 
+f.maxsnopack <- nPos ~ 1 + offset(log(nSamp + 1)) +f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(snopackMax)
+out.maxsnopack<-inla(f.maxsnopack, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[12,]$name <- "base + max snowpack"
+model.selection.dat[12,]$waic <- out.maxsnopack$waic$waic
+model.selection.dat[12,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.maxsnopack$summary.fitted.values$mean)
+model.selection.dat[12,]$dic<-out.maxsnopack$dic$dic
+
+# 
+f.pop.prop.m.dist.to.epi <- nPos ~ 1 + offset(log(nSamp + 1)) +f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(prop.M) + scale(pop.l) + scale(dist.to.epi)
+out.pop.prop.m.dist.to.epi<-inla(f.pop.prop.m.dist.to.epi, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[13,]$name <- "base + proportion male + population (t-1) + distance to epicenter + number of samples"
+model.selection.dat[13,]$waic <- out.pop.prop.m.dist.to.epi$waic$waic
+model.selection.dat[13,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.pop.prop.m.dist.to.epi$summary.fitted.values$mean)
+model.selection.dat[13,]$dic<-out.pop.prop.m.dist.to.epi$dic$dic
+
+# 
+f.prop.m.dist.to.epi <- nPos ~ 1 + offset(log(nSamp + 1)) +f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(prop.M) + scale(dist.to.epi)
+out.prop.m.dist.to.epi<-inla(f.prop.m.dist.to.epi, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[14,]$name <- "base + year + proportion male + distance to epicenter + number of samples"
+model.selection.dat[14,]$waic <- out.prop.m.dist.to.epi$waic$waic
+model.selection.dat[14,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.prop.m.dist.to.epi$summary.fitted.values$mean)
+model.selection.dat[14,]$dic<-out.prop.m.dist.to.epi$dic$dic
+
+# 
+f.pop.dist.to.epi <- nPos ~ 1 + offset(log(nSamp + 1)) +f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi)
+out.pop.dist.to.epi<-inla(f.pop.dist.to.epi, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[15,]$name <- "base + year + population (t-1) + distance to epicenter + number of samples"
+model.selection.dat[15,]$waic <- out.pop.dist.to.epi$waic$waic
+model.selection.dat[15,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.pop.dist.to.epi$summary.fitted.values$mean)
+model.selection.dat[15,]$dic<-out.pop.dist.to.epi$dic$dic
+
+# pop, dist to epi, 
+f.m <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(idtime)
+out.f.m<-inla(f.m, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[16,]$name <- "base + year + population (t-1) + distance to epicenter + number of samples"
+model.selection.dat[16,]$waic <- out.f.m$waic$waic
+model.selection.dat[16,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.f.m$summary.fitted.values$mean)
+model.selection.dat[16,]$dic<-out.f.m$dic$dic
+
+# pop, year 
+f.pop.trend <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(idtime)
+out.pop.trend<-inla(f.pop.trend, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[17,]$name <- "base + year + population (t-1) + number of samples"
+model.selection.dat[17,]$waic <- out.pop.trend$waic$waic
+model.selection.dat[17,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.pop.trend$summary.fitted.values$mean)
+model.selection.dat[17,]$dic<-out.pop.trend$dic$dic
+
+
+# pop, dist to epi, 
+f.trend.dist <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(dist.to.epi)
+out.trend.dist<-inla(f.trend.dist, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[18,]$name <- "base + year + distance to epicenter + number of samples"
+model.selection.dat[18,]$waic <- out.trend.dist$waic$waic
+model.selection.dat[18,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.dist$summary.fitted.values$mean)
+model.selection.dat[18,]$dic<-out.trend.dist$dic$dic
+
+# pop, dist to epi, 
+f.trend.pop <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l)
+out.trend.pop<-inla(f.trend.pop, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[19,]$name <- "base + year + population (t-1)"
+model.selection.dat[19,]$waic <- out.trend.pop$waic$waic
+model.selection.dat[18,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop$summary.fitted.values$mean)
+model.selection.dat[19,]$dic<-out.trend.pop$dic$dic
+
+f.trend.pop.dist.prop.m <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) 
+out.trend.pop.dist.prop.m<-inla(f.trend.pop.dist.prop.m, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[20,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + number of samples"
+model.selection.dat[20,]$waic <- out.trend.pop.dist.prop.m$waic$waic
+model.selection.dat[20,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m$summary.fitted.values$mean)
+model.selection.dat[20,]$dic<-out.trend.pop.dist.prop.m$dic$dic
+
+# full plus wsi
+f.trend.pop.dist.prop.m.wsi.avg <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5))))  + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(wsi.avg)
+out.trend.pop.dist.prop.m.wsi.avg<-inla(f.trend.pop.dist.prop.m.wsi.avg, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[21,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + wsi + number of samples"
+model.selection.dat[21,]$waic <- out.trend.pop.dist.prop.m.wsi.avg$waic$waic
+model.selection.dat[21,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.wsi.avg$summary.fitted.values$mean)
+model.selection.dat[21,]$dic<-out.trend.pop.dist.prop.m.wsi.avg$dic$dic
+
+# full plus wsi
+f.trend.pop.dist.prop.m.snopack.max.avg <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(snopackMax)
+out.trend.pop.dist.prop.m.snopack.max.avg<-inla(f.trend.pop.dist.prop.m.snopack.max.avg, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[22,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + snopackmax + number of samples"
+model.selection.dat[22,]$waic <- out.trend.pop.dist.prop.m.snopack.max.avg$waic$waic
+model.selection.dat[22,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.snopack.max.avg$summary.fitted.values$mean)
+model.selection.dat[22,]$dic<-out.trend.pop.dist.prop.m.snopack.max.avg$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.numDays0snopack <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5))))  + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(numDays0snopack)
+out.trend.pop.dist.prop.m.numDays0snopack<-inla(f.trend.pop.dist.prop.m.numDays0snopack, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[23,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + number of days no snow cover + number of samples"
+model.selection.dat[23,]$waic <- out.trend.pop.dist.prop.m.numDays0snopack$waic$waic
+model.selection.dat[23,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.numDays0snopack$summary.fitted.values$mean)
+model.selection.dat[23,]$dic<-out.trend.pop.dist.prop.m.numDays0snopack$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.min.cv.fd <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5))))  + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(min.cv.fd)
+out.trend.pop.dist.prop.m.min.cv.fd<-inla(f.trend.pop.dist.prop.m.min.cv.fd, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[24,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + mininmum(cover, food) + number of samples"
+model.selection.dat[24,]$waic <- out.trend.pop.dist.prop.m.min.cv.fd$waic$waic
+model.selection.dat[24,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.min.cv.fd$summary.fitted.values$mean)
+model.selection.dat[24,]$dic<-out.trend.pop.dist.prop.m.min.cv.fd$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.min.cv.fd.numdays0snopack <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(numDays0snopack)
+
+out.trend.pop.dist.prop.m.min.cv.fd.numdays0snopack<-inla(f.trend.pop.dist.prop.m.min.cv.fd.numdays0snopack, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))), verbose=T)
+# add to df
+model.selection.dat[25,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + numdays0snopack + number of samples"
+model.selection.dat[25,]$waic <- out.trend.pop.dist.prop.m.min.cv.fd.numdays0snopack$waic$waic
+model.selection.dat[25,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.min.cv.fd.numdays0snopack$summary.fitted.values$mean)
+model.selection.dat[25,]$dic<-out.trend.pop.dist.prop.m.min.cv.fd.numdays0snopack$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi)*scale(idtime)
+
+out.trend.pop.dist.prop.m.dist.time<-inla(f.trend.pop.dist.prop.m.dist.time.int, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))), verbose=T)
+# add to df
+model.selection.dat[26,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + number of samples"
+model.selection.dat[26,]$waic <- out.trend.pop.dist.prop.m.dist.time$waic$waic
+model.selection.dat[26,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time$summary.fitted.values$mean)
+model.selection.dat[26,]$dic<-out.trend.pop.dist.prop.m.dist.time$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.pop.time.int <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi)*scale(idtime) + scale(idtime )*scale(pop.l)
+
+out.trend.pop.dist.prop.m.dist.time.int.pop.time.int<-inla(f.trend.pop.dist.prop.m.dist.time.int.pop.time.int, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[27,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + number of samples"
+model.selection.dat[27,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.pop.time.int$waic$waic
+model.selection.dat[27,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.pop.time.int$summary.fitted.values$mean)
+model.selection.dat[27,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.pop.time.int$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.pop.time.int.wsi <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi)*scale(idtime) + scale(idtime)*scale(pop.l) + scale(wsi.avg)
+
+out.trend.pop.dist.prop.m.dist.time.int.pop.time.int.wsi<-inla(f.trend.pop.dist.prop.m.dist.time.int.pop.time.int.wsi, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[28,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + wsi + number of samples"
+model.selection.dat[28,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.pop.time.int.wsi$waic$waic
+model.selection.dat[28,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.pop.time.int.wsi$summary.fitted.values$mean)
+model.selection.dat[28,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.pop.time.int.wsi$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.pop.time.int.0.sno <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi)*scale(idtime) + scale(idtime)*scale(pop.l) + scale(numDays0snopack)
+
+out.trend.pop.dist.prop.m.dist.time.int.0.sno<-inla(f.trend.pop.dist.prop.m.dist.time.int.pop.time.int.0.sno, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[29,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + number of days with 0 snow + number of samples"
+model.selection.dat[29,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.0.sno$waic$waic
+model.selection.dat[29,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.0.sno$summary.fitted.values$mean)
+model.selection.dat[29,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.0.sno$dic$dic
+
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi)*scale(idtime) + scale(idtime )*scale(pop.l) + scale(min.cv.fd)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[30,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + mininmum(cover, food) + number of samples"
+model.selection.dat[30,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd$waic$waic
+model.selection.dat[30,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd$summary.fitted.values$mean)
+model.selection.dat[30,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.max.sno <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi)*scale(idtime) + scale(idtime)*scale(pop.l) + scale(snopackMax)
+
+out.trend.pop.dist.prop.m.dist.time.int.max.sno<-inla(f.trend.pop.dist.prop.m.dist.time.int.max.sno, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[31,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + max snow pack + number of samples"
+model.selection.dat[31,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.max.sno$waic$waic
+model.selection.dat[31,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.max.sno$summary.fitted.values$mean)
+model.selection.dat[31,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.max.sno$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.0.sno.min.cv.fd <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi)*scale(idtime) + scale(idtime)*scale(pop.l) + scale(numDays0snopack)
+
+
+out.trend.pop.dist.prop.m.dist.time.int.0.sno.min.cv.fd<-inla(f.trend.pop.dist.prop.m.dist.time.int.0.sno.min.cv.fd, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[32,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + number of days with 0 snow + number of samples + number of samples"
+model.selection.dat[32,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.0.sno.min.cv.fd$waic$waic
+model.selection.dat[32,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.0.sno.min.cv.fd$summary.fitted.values$mean)
+model.selection.dat[32,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.0.sno.min.cv.fd$dic$dic
+
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.num.0.sno <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi)*scale(idtime) + scale(idtime)*scale(pop.l) + scale(min.cv.fd) + scale(numDays0snopack)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.num.0.sno<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.num.0.sno, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[33,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + number of days with 0 snow + number of samples"
+model.selection.dat[33,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.num.0.sno$waic$waic
+model.selection.dat[33,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.num.0.sno$summary.fitted.values$mean)
+model.selection.dat[33,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.num.0.sno$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi)*scale(idtime) + scale(idtime )*scale(pop.l) + scale(min.cv.fd) + scale(temp)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[33,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + number of days below -17.7C + number of samples"
+model.selection.dat[33,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp$waic$waic
+model.selection.dat[33,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp$summary.fitted.values$mean)
+model.selection.dat[33,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi)*scale(idtime) + scale(idtime)*scale(pop.l) + scale(min.cv.fd) + scale(temp)*scale(idtime) 
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[34,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + (number of days below -17.7C x year) + number of samples"
+model.selection.dat[34,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time$waic$waic
+model.selection.dat[34,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time$summary.fitted.values$mean)
+model.selection.dat[34,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi) * scale(idtime) + scale(min.cv.fd) + scale(temp)*scale(idtime) + scale(temp)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[35,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + (number of days below -17.7C x year) + number of days below -17.7C + number of samples"
+model.selection.dat[35,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp$waic$waic
+model.selection.dat[35,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp$summary.fitted.values$mean)
+model.selection.dat[35,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi) * scale(idtime) + scale(idtime)*scale(pop.l) + scale(min.cv.fd) + scale(numDays0snopack)*scale(idtime) + scale(numDays0snopack)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[36,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + (number of days with 0 snow x year) + number of days with 0 snow + number of samples"
+model.selection.dat[36,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno$waic$waic
+model.selection.dat[36,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno$summary.fitted.values$mean)
+model.selection.dat[36,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno$dic$dic
+
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.dist.to.epi.int.n.samp <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi) * scale(idtime) + scale(min.cv.fd) + scale(temp)*scale(idtime) + scale(temp)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.dist.to.epi.int.n.samp<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.dist.to.epi.int.n.samp, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[38,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + (number of days below -17.7C x year) + number of days below -17.7C + number of samples + (number of samples x distance to epicenter)"
+model.selection.dat[38,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.dist.to.epi.int.n.samp$waic$waic
+model.selection.dat[38,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.dist.to.epi.int.n.samp$summary.fitted.values$mean)
+model.selection.dat[38,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.dist.to.epi.int.n.samp$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi) * scale(idtime) + scale(min.cv.fd) + scale(temp)*scale(idtime) + scale(temp)
+
+
+# top model
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01))), compute=TRUE))
+# add to df
+model.selection.dat[39,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + (number of days below -17.7C x year) + number of days below -17.7C + number of samples + (number of samples x year)"
+model.selection.dat[39,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year$waic$waic
+model.selection.dat[39,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year$summary.fitted.values$mean)
+model.selection.dat[39,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year.dist.to.epi.int.n.samp <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi) * scale(idtime) + scale(min.cv.fd) + scale(temp)*scale(idtime) + scale(temp) + scale(nSamp)*scale(idtime)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year.dist.to.epi.int.n.samp<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.dist.to.epi.int.n.samp, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[40,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + (number of days below -17.7C x year) + number of days below -17.7C + number of samples + (number of samples x year) + (number of samples x distance to epicenter)"
+model.selection.dat[40,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year.dist.to.epi.int.n.samp$waic$waic
+model.selection.dat[40,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year.dist.to.epi.int.n.samp$summary.fitted.values$mean)
+model.selection.dat[40,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year.dist.to.epi.int.n.samp$dic$dic
+
+
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year.dist.to.epi.int.n.samp.off <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi) * scale(idtime) + scale(min.cv.fd) + scale(temp) + offset(log(nSamp + 1))*scale(dist.to.epi) + offset(log(nSamp+1)) + offset(log(nSamp + 1))
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year.dist.to.epi.int.n.samp.off<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year.dist.to.epi.int.n.samp.off, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[42,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + (number of days below -17.7C x year) + number of days below -17.7C + number of samples + (number of samples x distance to epicenter)"
+model.selection.dat[42,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year.dist.to.epi.int.n.samp.off$waic$waic
+model.selection.dat[42,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year.dist.to.epi.int.n.samp.off$summary.fitted.values$mean)
+model.selection.dat[42,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year.dist.to.epi.int.n.samp.off$dic$dic
+
+
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.wsi.avg.int.time.wsi.avg.nsamp.int.year <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi) * scale(idtime) + scale(min.cv.fd) + scale(wsi.avg)*scale(idtime) + scale(wsi.avg) + scale(nSamp)*scale(idtime) + scale(nSamp)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.wsi.avg.int.time.wsi.avg.nsamp.int.year<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.wsi.avg.int.time.wsi.avg.nsamp.int.year, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[43,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + (WSI average x year) + WSI average + number of samples + (number of samples x year)"
+model.selection.dat[43,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.wsi.avg.int.time.wsi.avg.nsamp.int.year$waic$waic
+model.selection.dat[43,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.wsi.avg.int.time.wsi.avg.nsamp.int.year$summary.fitted.values$mean)
+model.selection.dat[43,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.wsi.avg.int.time.wsi.avg.nsamp.int.year$dic$dic
+
+
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno.nsamp.int.year <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi) * scale(idtime) + scale(min.cv.fd) + scale(numDays0snopack)*scale(idtime) + scale(numDays0snopack) + scale(nSamp)*scale(idtime) + scale(nSamp)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno.nsamp.int.year<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno.nsamp.int.year, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[44,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + (number of days with 0 snow x year) + number of days with 0 snow + number of samples + (number of samples x year)"
+model.selection.dat[44,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno.nsamp.int.year$waic$waic
+model.selection.dat[44,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno.nsamp.int.year$summary.fitted.values$mean)
+model.selection.dat[44,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno.nsamp.int.year$dic$dic
+
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.nPost.temp.int.nPost.temp.dist.to.epi.int.n.samp <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi) * scale(idtime) + scale(min.cv.fd) + scale(temp)*scale(nPos.t) + scale(temp) + scale(nPos.t)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.nPost.temp.int.nPost.temp.dist.to.epi.int.n.samp<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.nPost.temp.int.nPost.temp.dist.to.epi.int.n.samp, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[45,]$name <- "base + year + population (t-1) + proportion male + distance to epicenter + (distance to epicenter x year) + (population (t-1) x year) + (number of days below -17.7C x number of positives total (t - 1)) + number of days below -17.7C + number of positives total (t - 1) + number of samples + (number of samples x distance to epicenter)"
+model.selection.dat[45,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.nPost.temp.int.nPost.temp.dist.to.epi.int.n.samp$waic$waic
+model.selection.dat[45,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.nPost.temp.int.nPost.temp.dist.to.epi.int.n.samp$summary.fitted.values$mean)
+model.selection.dat[45,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.nPost.temp.int.nPost.temp.dist.to.epi.int.n.samp$dic$dic
+
+
+
+# get deltawaic
+model.selection.dat <- model.selection.dat %>% mutate(deltaWAIC=as.numeric(waic)-as.numeric(min(model.selection.dat$waic))) %>%
+  arrange(deltaWAIC)
+
+# write model to file
+model.selection.dat$modelnumber <- seq(1,nrow(model.selection.dat),1)
+tab_df(model.selection.dat[,c(6,1,5)], col.header=c(paste0("Model", " ", "Number"), paste0("Model", " ", "Name"), paste0("delta", " ", "WAIC")),title=c("Model Selection"),
+       alternate.rows = T, file="./data/modelSelection.html")
+
+webshot("./data/modelSelection.html", "./data/modelSelection.png")
+
+# save model selection df
+write.table(model.selection.dat,'./data/modelSelection')
+
+cols<-unique(unlist(strsplit(model.selection.dat$name, "+", fixed=T)))
+equations<-strsplit(model.selection.dat$name, "+", fixed=T)
+model.visual <- data.frame(modelnum=model.selection.dat$modelnumber, deltawaic=model.selection.dat$deltaWAIC)
+model.visual<-cbind(model.visual, setNames( lapply(cols, function(x) x=""), cols) )
+for(i in 1:length(equations)){
+  for(j in 1:length(equations[[i]])){
+    model.visual[i,which(colnames(model.visual)==equations[[i]][j])] <- "x"
+  }
+}
+```
+
+```{r model selection simplified}
+
+base <- "base"
+temp <- "number of days below -17.7C"
+epi <- "distance to epicenter"
+pop <- "population (t-1)"
+wsi <- "WSI average"
+prop <- "proportion male"
+no.sno <- "number of days no snow cover"
+max.sno <- "max snow pack"
+year <- "year"
+temp.year <- paste0("f", "(", temp, ", ", year, ")")
+epi.year <- paste0("f", "(", epi, ", ", year, ")")
+no.sno.year <-paste0("f", "(", no.sno, ", ", year, ")")
+wsi.year <- paste0("f", "(", wsi, ", ", year, ")")
+# random effects only and offset only
+f.base <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5))))  + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01))))
+# fit
+out.base<-inla(f.base, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(0.5,0.01)))))
+
+# out with wsi
+
+# add to df
+model.selection.dat[1,]$name <- "base"
+model.selection.dat[1,]$waic <- out.base$waic$waic
+model.selection.dat[1,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+                                             out.base$summary.fitted.values$mean)
+model.selection.dat[1,]$dic<-out.base$dic$dic
+
+# random effects only and offset only
+f.temp <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5))))  + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(temp)
+# fit
+out.temp<-inla(f.temp, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(0.5,0.01)))))
+
+# out with wsi
+
+# add to df
+model.selection.dat[2,]$name <- paste0(base, "+", temp)
+model.selection.dat[2,]$waic <- out.temp$waic$waic
+model.selection.dat[2,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+                                             out.temp$summary.fitted.values$mean)
+model.selection.dat[2,]$dic<-out.temp$dic$dic
+
+# dist to epi
+f.dist.to.epi <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(dist.to.epi)
+# fit
+out.dist.to.epi<-inla(f.dist.to.epi, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(0.5,0.01)))))
+
+# add to df
+model.selection.dat[3,]$name <- paste0(base,"+", epi)
+model.selection.dat[3,]$waic <- out.dist.to.epi$waic$waic
+model.selection.dat[3,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+                                             out.dist.to.epi$summary.fitted.values$mean)
+model.selection.dat[3,]$dic<-out.dist.to.epi$dic$dic
+
+# prop male
+f.prop.M <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(prop.M)
+# fit
+out.prop.M<-inla(f.prop.M, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(0.5,0.01)))))
+
+# add to df
+model.selection.dat[4,]$name <- paste0(base,"+", prop)
+model.selection.dat[4,]$waic <- out.prop.M$waic$waic
+model.selection.dat[4,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+                                             out.prop.M$summary.fitted.values$mean)
+model.selection.dat[4,]$dic<-out.prop.M$dic$dic
+
+
+# population only
+
+# prop male
+f.pop <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l)
+# fit
+out.pop<-inla(f.prop.M, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(0.5,0.01)))))
+
+# add to df
+model.selection.dat[5,]$name <- paste0(base,"+", pop)
+model.selection.dat[5,]$waic <- out.pop$waic$waic
+model.selection.dat[5,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+                                             out.pop$summary.fitted.values$mean)
+model.selection.dat[5,]$dic<-out.pop$dic$dic
+
+f.num.days.zero.sno.pack <- nPos ~ 1 + offset(log(nSamp + 1)) +f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) +  f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(numDays0snopack)
+
+out.num.days.zero.sno.pack<-inla(f.num.days.zero.sno.pack, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+
+
+# add to df
+model.selection.dat[6,]$name <- paste0(base,"+", no.sno)
+model.selection.dat[6,]$waic <- out.num.days.zero.sno.pack$waic$waic
+model.selection.dat[6,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.num.days.zero.sno.pack$summary.fitted.values$mean)
+model.selection.dat[6,]$dic<-out.num.days.zero.sno.pack$dic$dic
+
+
+
+f.wsi.avg <- nPos ~ 1 + offset(log(nSamp + 1)) +f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(wsi.avg)
+
+out.wsi.avg<-inla(f.wsi.avg, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+
+# add to df
+model.selection.dat[7,]$name <- paste0(base,"+", wsi)
+model.selection.dat[7,]$waic <- out.wsi.avg$waic$waic
+model.selection.dat[7,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.wsi.avg$summary.fitted.values$mean)
+model.selection.dat[7,]$dic<-out.wsi.avg$dic$dic
+
+# 
+f.pop.prop.m.dist.to.epi <- nPos ~ 1 + offset(log(nSamp + 1)) +f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(as.factor(idtime4), model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(prop.M) + scale(pop.l) + scale(dist.to.epi)
+out.pop.prop.m.dist.to.epi<-inla(f.pop.prop.m.dist.to.epi, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[8,]$name <- paste0(base,"+", prop, "+", pop, "+", epi)
+model.selection.dat[8,]$waic <- out.pop.prop.m.dist.to.epi$waic$waic
+model.selection.dat[8,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.pop.prop.m.dist.to.epi$summary.fitted.values$mean)
+model.selection.dat[8,]$dic<-out.pop.prop.m.dist.to.epi$dic$dic
+
+# 
+f.prop.m.dist.to.epi <- nPos ~ 1 + offset(log(nSamp + 1)) +f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(prop.M) + scale(dist.to.epi)
+out.prop.m.dist.to.epi<-inla(f.prop.m.dist.to.epi, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[9,]$name <- paste0(base,"+", epi, "+", prop)
+model.selection.dat[9,]$waic <- out.prop.m.dist.to.epi$waic$waic
+model.selection.dat[9,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.prop.m.dist.to.epi$summary.fitted.values$mean)
+model.selection.dat[9,]$dic<-out.prop.m.dist.to.epi$dic$dic
+
+# 
+f.pop.dist.to.epi <- nPos ~ 1 + offset(log(nSamp + 1)) +f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi)
+out.pop.dist.to.epi<-inla(f.pop.dist.to.epi, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df 
+model.selection.dat[10,]$name <- paste0(base,"+", epi, "+", pop)
+model.selection.dat[10,]$waic <- out.pop.dist.to.epi$waic$waic
+model.selection.dat[10,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.pop.dist.to.epi$summary.fitted.values$mean)
+model.selection.dat[10,]$dic<-out.pop.dist.to.epi$dic$dic
+
+# full plus wsi
+f.trend.pop.dist.prop.m.wsi.avg <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5))))  + f(as.factor(idtime4), model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(wsi.avg)
+out.trend.pop.dist.prop.m.wsi.avg<-inla(f.trend.pop.dist.prop.m.wsi.avg, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[11,]$name <- paste0(base,"+", epi, "+", pop, "+", wsi, "+", prop)
+model.selection.dat[11,]$waic <- out.trend.pop.dist.prop.m.wsi.avg$waic$waic
+model.selection.dat[11,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.wsi.avg$summary.fitted.values$mean)
+model.selection.dat[11,]$dic<-out.trend.pop.dist.prop.m.wsi.avg$dic$dic
+
+# full plus wsi
+f.trend.pop.dist.prop.m.snopack.max.avg <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(snopackMax) + f(as.factor(idtime4), model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01))))
+out.trend.pop.dist.prop.m.snopack.max.avg<-inla(f.trend.pop.dist.prop.m.snopack.max.avg, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[12,]$name <- paste0(base,"+",  pop, "+", epi, "+", prop, "+", max.sno)
+model.selection.dat[12,]$waic <- out.trend.pop.dist.prop.m.snopack.max.avg$waic$waic
+model.selection.dat[12,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.snopack.max.avg$summary.fitted.values$mean)
+model.selection.dat[12,]$dic<-out.trend.pop.dist.prop.m.snopack.max.avg$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.numDays0snopack <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5))))  + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(numDays0snopack)
+out.trend.pop.dist.prop.m.numDays0snopack<-inla(f.trend.pop.dist.prop.m.numDays0snopack, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.025)))))
+# add to df
+model.selection.dat[13,]$name <- paste0(base,"+", pop, "+", epi, "+", prop, "+", no.sno)
+model.selection.dat[13,]$waic <- out.trend.pop.dist.prop.m.numDays0snopack$waic$waic
+model.selection.dat[13,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.numDays0snopack$summary.fitted.values$mean)
+model.selection.dat[13,]$dic<-out.trend.pop.dist.prop.m.numDays0snopack$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.min.cv.fd.numdays0snopack <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(as.factor(idtime4), model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(numDays0snopack)
+
+out.trend.pop.dist.prop.m.min.cv.fd.numdays0snopack<-inla(f.trend.pop.dist.prop.m.min.cv.fd.numdays0snopack, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))), verbose=T)
+# add to df
+model.selection.dat[14,]$name <- paste0(base,"+", pop, "+", epi, "+", prop, "+", no.sno)
+model.selection.dat[14,]$waic <- out.trend.pop.dist.prop.m.min.cv.fd.numdays0snopack$waic$waic
+model.selection.dat[14,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.min.cv.fd.numdays0snopack$summary.fitted.values$mean)
+model.selection.dat[14,]$dic<-out.trend.pop.dist.prop.m.min.cv.fd.numdays0snopack$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi)*scale(idtime) + f(as.factor(idtime2), scale(dist.to.epi),model="ar1", constr=TRUE) 
+
+out.trend.pop.dist.prop.m.dist.time<-inla(f.trend.pop.dist.prop.m.dist.time.int, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))), verbose=T)
+# add to df
+model.selection.dat[15,]$name <- paste0(base,"+", pop, "+", epi, "+", prop, "+", epi.year)
+model.selection.dat[15,]$waic <- out.trend.pop.dist.prop.m.dist.time$waic$waic
+model.selection.dat[15,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time$summary.fitted.values$mean)
+model.selection.dat[15,]$dic<-out.trend.pop.dist.prop.m.dist.time$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.pop.time.int.wsi <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + f(as.factor(idtime2), scale(dist.to.epi),model="ar1", constr=TRUE) + scale(wsi.avg)
+
+out.trend.pop.dist.prop.m.dist.time.int.pop.time.int.wsi<-inla(f.trend.pop.dist.prop.m.dist.time.int.pop.time.int.wsi, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[16,]$name <- paste0(base,"+", pop, "+", epi, "+", prop, "+", epi.year, "+", wsi)
+model.selection.dat[16,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.pop.time.int.wsi$waic$waic
+model.selection.dat[16,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.pop.time.int.wsi$summary.fitted.values$mean)
+model.selection.dat[16,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.pop.time.int.wsi$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.pop.time.int.0.sno <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + f(as.factor(idtime2), scale(dist.to.epi),model="ar1", constr=TRUE) + scale(numDays0snopack)
+
+out.trend.pop.dist.prop.m.dist.time.int.0.sno<-inla(f.trend.pop.dist.prop.m.dist.time.int.pop.time.int.0.sno, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[17,]$name <- paste0(base,"+", pop, "+", epi, "+", prop, "+", epi.year, "+", no.sno)
+model.selection.dat[17,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.0.sno$waic$waic
+model.selection.dat[17,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.0.sno$summary.fitted.values$mean)
+model.selection.dat[17,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.0.sno$dic$dic
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.max.sno <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + f(as.factor(idtime2), scale(dist.to.epi),model="ar1", constr=TRUE) + scale(snopackMax)
+
+out.trend.pop.dist.prop.m.dist.time.int.max.sno<-inla(f.trend.pop.dist.prop.m.dist.time.int.max.sno, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[18,]$name <- paste0(base, "+", pop, "+", epi, "+", prop, "+", epi.year, "+", max.sno)
+model.selection.dat[18,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.max.sno$waic$waic
+model.selection.dat[18,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.max.sno$summary.fitted.values$mean)
+model.selection.dat[18,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.max.sno$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.0.sno.min.cv.fd <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(idtime) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + f(as.factor(idtime2), scale(dist.to.epi),model="ar1", constr=TRUE) + scale(numDays0snopack)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[19,]$name <- paste0(base,"+", pop, "+", epi, "+", prop, "+", epi.year, "+", temp)
+model.selection.dat[19,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp$waic$waic
+model.selection.dat[19,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp$summary.fitted.values$mean)
+model.selection.dat[19,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + f(as.factor(idtime2), scale(dist.to.epi),model="ar1", constr=TRUE) + f(as.factor(idtime3), scale(temp),model="ar1", constr=TRUE) + scale(temp2)
+
+# top model
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[20,]$name <- paste0(base,"+", pop, "+", epi, "+", prop, "+", epi.year, "+", temp, "+", temp.year)
+model.selection.dat[20,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time$waic$waic
+model.selection.dat[20,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time$summary.fitted.values$mean)
+model.selection.dat[20,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time$dic$dic
+
+# full plus max snopack
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + f(as.factor(idtime2), scale(dist.to.epi),model="ar1", constr=TRUE) + f(as.factor(idtime3), scale(numDays0snopack),model="ar1", constr=TRUE)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[21,]$name <- paste0(base,"+", pop, "+", epi, "+", prop, "+", epi.year, "+", no.sno, "+", no.sno.year)
+model.selection.dat[21,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno$waic$waic
+model.selection.dat[21,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno$summary.fitted.values$mean)
+model.selection.dat[21,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.0.sno.int.time.0.sno$dic$dic
+
+
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.wsi.avg.int.time.wsi.avg.nsamp.int.year <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + f(as.factor(idtime3), scale(dist.to.epi),model="ar1", constr=TRUE) + scale(min.cv.fd) + f(as.factor(idtime2), scale(wsi.avg), model="ar1", constr=TRUE) + scale(wsi.avg)
+
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.wsi.avg.int.time.wsi.avg.nsamp.int.year<-inla(f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.wsi.avg.int.time.wsi.avg.nsamp.int.year, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+model.selection.dat[22,]$name <- paste0(base,"+", pop, "+", epi, "+", prop, "+", epi.year, "+", wsi, "+", wsi.year)
+model.selection.dat[22,]$waic <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.wsi.avg.int.time.wsi.avg.nsamp.int.year$waic$waic
+model.selection.dat[22,]$pseudo.r2<-pseudo_r2(WIDat$nPos,
+out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.wsi.avg.int.time.wsi.avg.nsamp.int.year$summary.fitted.values$mean)
+model.selection.dat[22,]$dic<-out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.wsi.avg.int.time.wsi.avg.nsamp.int.year$dic$dic
+
+# get deltawaic
+model.selection.dat <- model.selection.dat %>% mutate(deltaWAIC=as.numeric(waic)-as.numeric(min(model.selection.dat$waic))) %>%
+  arrange(deltaWAIC)
+
+# write model to file
+model.selection.dat$modelnumber <- seq(1,nrow(model.selection.dat),1)
+tab_df(model.selection.dat[,c(6,1,5)], col.header=c(paste0("Model", " ", "Number"), paste0("Model", " ", "Name"), paste0("delta", " ", "WAIC")),title=c("Model Selection"),
+       alternate.rows = T)
+
+webshot("./data/modelSelection.html", "./data/modelSelection.png")
+
+# save model selection df
+write.table(model.selection.dat,'./data/modelSelection')
+
+cols<-unique(unlist(strsplit(model.selection.dat$name, "+", fixed=T)))
+equations<-strsplit(model.selection.dat$name, "+", fixed=T)
+model.visual <- data.frame(modelnum=model.selection.dat$modelnumber, deltawaic=model.selection.dat$deltaWAIC)
+model.visual<-cbind(model.visual, setNames(lapply(cols, function(x) x=" "), cols))
+for(i in 1:length(equations)){
+  for(j in 1:length(equations[[i]])){
+    model.visual[i,which(colnames(model.visual)==equations[[i]][j])] <- "x"
+  }
+}
+col_head <- c("Model Number", "Delta wAIC", cols)
+tab_df(model.visual, col.header = col_head, alternate.rows =  T,file="./data/modelselectionvisual.html")
+webshot("./data/modelselectionvisual.html", "./data/modelselectionvisual.png")
+```
+
+
+```{r generate observed v expected plot}
+out.full <- out.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp
+out.dat <- data.frame(obs=WIDat$nPos,expected=round(out.full$summary.fitted.values$mean))
+ggplot(out.dat, aes(x=expected, y=obs))+
+  geom_point() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+  panel.background = element_blank(), axis.line = element_line(colour = "black"),
+  legend.position = c(0.8, 0.87), legend.title = element_blank()) +
+  geom_abline(slope=1,color='red') +
+  ggtitle("Observed Versus Expected") +
+  xlab("Expected") +
+  ylab("Observed") +
+  xlim(0,80)
+
+
+out.dat <- data.frame(obs=WIDat$nPos,expected=round(out.base$summary.fitted.values$mean))
+ggplot(out.dat, aes(x=expected, y=obs))+
+  geom_point() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+  panel.background = element_blank(), axis.line = element_line(colour = "black"),
+  legend.position = c(0.8, 0.87), legend.title = element_blank()) +
+  geom_abline(slope=1,color='red') +
+  ggtitle("Observed Versus Expected") +
+  xlab("Expected") +
+  ylab("Observed") +
+  xlim(0,80)
+```
+
+
+
+```{r counterfactuals}
+f.full <- f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp
+# fit WSI total with no joint
+# num days 0 = 0 snow prediction
+WIDat.pred <- WIDat
+WIDat.pred$nPos <- NA
+WIDat.pred$temp <- 0
+WIDat.pred <- rbind(WIDat,WIDat.pred)
+out.full.pred<-inla(f.full, family=c("zeroinflatednbinomial1"), data=WIDat.pred, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+
+# use this with output from predicted values
+plot(WIDat$nPos~out.full.pred$summary.fitted.values$mean[(nrow(WIDat)+1):(2*nrow(WIDat))], main="Observed versus Predicted Values 2021-2022", xlab="predicted", ylab="observed")
+
+years <- unique(WIDat$year)
+obs <- data.frame(year=years,source="",value=0)
+for(i in 1:length(years)){
+obs[i,]$year <- years[i]
+obs[i,]$source <- "observed"
+obs[i,]$value <-sum(WIDat[which(WIDat$year==years[i]),]$nPos, na.rm=TRUE)
+}
+obs <- obs %>% arrange(year)
+j<-1
+nobs <- nrow(WIDat)
+nuid <- n_distinct(WIDat$uid)
+
+post.dat <- as.data.frame(expand.grid(year=unique(WIDat$year),
+                       observed=0,
+                       LCL.expected.0.sno=0,
+                       UCL.expected.0.sno=0,
+                       expected.0.sno=0,
+                       expected.LCL=0,
+                       expected=0,
+                       expected.UCL=0))
+post.dat <- post.dat %>% arrange(year)
+
+j<-1
+fit<-out.full.pred$summary.fitted.values$mean
+out<-data.frame(pred=fit, obs=WIDat$nPos, nSamp=WIDat$nSamp)
+for(i in seq(1, nobs, nuid)){
+  post.dat[j,]$expected<-sum(round(out.full.pred$summary.fitted.values[i:(i+(nuid-1)),]$mean),na.rm=T)
+  post.dat[j,]$expected.LCL<-sum(round(out.full.pred$summary.fitted.values[i:(i+nuid),]$'0.025quant'),na.rm=T)
+  post.dat[j,]$expected.UCL<-sum(round(out.full.pred$summary.fitted.values[i:(i+nuid),]$'0.975quant'),na.rm=T)
+  j <- j + 1
+}
+j<-1
+for(i in seq(nobs, 2*nobs, nuid)){
+  post.dat[j,]$expected.0.sno<-sum(round(out.full.pred$summary.fitted.values[i:(i+nuid),]$mean),na.rm=T)
+  post.dat[j,]$LCL.expected.0.sno<-sum(round(out.full.pred$summary.fitted.values[i:(i+nuid),]$'0.025quant'),na.rm=T)
+  post.dat[j,]$UCL.expected.0.sno<-sum(round(out.full.pred$summary.fitted.values[i:(i+nuid),]$'0.975quant'),na.rm=T)
+  j <- j + 1
+}
+
+post.dat <- post.dat[-c(nrow(post.dat)),]
+post.dat$observed <- obs$value
+ggplot(post.dat,aes(x=year)) +
+  
+  geom_line(aes(y=observed, color="observed")) +
+  geom_line(aes(y=expected, color="expected")) +
+  geom_line(aes(y=expected.0.sno, color="expected.0.days.below.17.7")) +
+
+  geom_ribbon(data=post.dat, aes(x=year, ymin=expected.LCL, ymax=expected.UCL), fill="gray70",
+              alpha = 0.3) +
+  geom_ribbon(data=post.dat, aes(x=year, ymin=LCL.expected.0.sno, ymax=UCL.expected.0.sno), fill="gray70",
+              alpha = 0.5) +
+   scale_color_manual(name='Models',
+                     breaks=c('expected',"observed", "expected.0.days.below.17.7"),
+                     values=c('expected'='green','expected.0.days.below.17.7'='red' ,'observed'='black')) + 
+  
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"),
+legend.position = c(0.3, 0.87), legend.title = element_blank()) + 
+ylab("Incidence of Cases") +
+  ggtitle("Annualized Incidence of CWD")
+
+
+
+```{r post process}
+post.dat <- as.data.frame(expand.grid(year=unique(WIDat$year),
+                       expected=0,
+                       observed=0))
+post.dat <- post.dat %>% arrange(year)
+j <- 1
+k <- 31
+years <- unique(WIDat$year)
+obs <- data.frame(year="", source="observed", value=0)
+for(i in 1:length(years)){
+  obs[i,]$year <- years[i]
+  obs[i,]$source <- "observed"
+  obs[i,]$value <-sum(WIDat[which(WIDat$year==years[i]),]$nPos, na.rm=TRUE)
+}
+
+obs <- obs %>% arrange(year)
+j<-1
+nobs <- nrow(WIDat)
+nuid <- n_distinct(WIDat$uid)
+post.dat <- post.dat %>% arrange(year)
+post.dat$num.na <- 0
+post.dat$num.lz <- 0
+for(i in seq(1, nobs, nuid)){
+  post.dat[j,]$expected<-sum(round(out.full$summary.fitted.values[i:(i+nuid),]$mean),na.rm=T)
+  j <- j + 1
+}
+post.dat$observed <- obs$value
+ggplot(post.dat,aes(x=year)) + 
+  geom_line(aes(y=expected, color="expected")) +
+  geom_line(aes(y=observed, color="observed")) +
+   scale_color_manual(name='Model Comparison',
+                     breaks=c('expected', "expected", 'observed'),
+                     values=c('expected'='green',"observed"="purple")) + 
+  
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"),
+legend.position = c(0.1, 0.87), legend.title = element_blank()) + 
+ylab("Incidence of Cases") +
+  ggtitle("Annualized Expected Versus Observed CWD Incidence")
+```
+```{r make map of observed incidence}
+expected<-round(out.full.pred$summary.fitted.values$mean[(nobs+1):(2*nobs)])
+expected.UCL<-round(out.full.pred$summary.fitted.values$'0.975quant'[(nobs+1):(2*nobs)])
+expected.LCL<-round(out.full.pred$summary.fitted.values$'0.025quant'[(nobs+1):(2*nobs)])
+out.spatial<-as.data.frame(expand.grid(year=unique(WIDat$year),uid=unique(WIDat$uid))) %>% arrange(year,uid)
+out.spatial$expected <- expected
+out.spatial$expected.UCL <- expected.UCL
+out.spatial$expected.LCL <- expected.LCL
+out.spatial$obs <- WIDat$nPos
+out.spatial <- out.spatial %>% group_by(uid) %>% summarise(exp=sum(expected, na.rm=T),
+                                                           exp.LCL=sum(expected.LCL, na.rm=T),
+                                                           exp.UCL=sum(expected.UCL, na.rm=T),
+                                                           obs=sum(obs, na.rm=T))
+wiStudyShp$exp <- out.spatial$exp
+wiStudyShp$exp.UCL <- out.spatial$exp.UCL
+wiStudyShp$exp.LCL <- out.spatial$exp.LCL
+wiStudyShp$obs <- out.spatial$obs
+
+breaks<-seq(0,500,50)
+
+exp.UCL<-ggplot() + 
+  geom_sf(data=wiStudyShp) +
+  geom_sf(data=wiStudyShp, aes(fill=wiStudyShp$exp.UCL)) + 
+  scale_fill_continuous() +
+    scale_fill_continuous() +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+           panel.background = element_blank(), axis.line = element_line(colour = "black"),
+            legend.title = element_blank()) +
+  ggtitle(label="Expected 150 Days No Snow Cover Upper Credible Interval") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+exp.LCL<-ggplot() + 
+  geom_sf(data=wiStudyShp) +
+  geom_sf(data=wiStudyShp, aes(fill=wiStudyShp$exp.LCL)) + 
+  scale_fill_continuous() +
+    scale_fill_continuous() +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+           panel.background = element_blank(), axis.line = element_line(colour = "black"),
+            legend.title = element_blank()) +
+  ggtitle(label="Expected 150 Days No Snow Cover Lower Credible Interval") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+counter<-ggplot() + 
+  geom_sf(data=wiStudyShp) +
+  geom_sf(data=wiStudyShp, aes(fill=wiStudyShp$exp)) + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+           panel.background = element_blank(), axis.line = element_line(colour = "black"),
+            legend.title = element_blank()) +
+  ggtitle(label="Expected") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_gradientn(colors=rainbow(6), breaks = breaks, labels = breaks,limits=c(0,500))
+
+
+obs<-ggplot() + 
+  geom_sf(data=wiStudyShp) +
+  geom_sf(data=wiStudyShp, aes(fill=obs)) + 
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_gradientn(colors=rainbow(11), breaks = breaks, labels = breaks,
+                       limits=c(0,500))+
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+           panel.background = element_blank(), axis.line = element_line(colour = "black"),
+            legend.title = element_blank()) +
+    ggtitle(label="Observed") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+title <- ggdraw() + draw_label("Total Cases (2008-2022)", fontface='bold')
+
+plot.grid<-plot_grid(obs,counter)
+plot_grid(title,plot.grid, )  
+
+```
+```{r}
+# generate df from top model
+posterior.est.df <- data.frame(name = c("Intercept",
+                                        "Population Size (year - 1)",
+                                        "Distance to Epicenter",
+                                        "Proportion Male",
+                                        "number of days below -17.7C"
+                                       ),
+  mu=out.full$summary.fixed$mean,
+  sd=out.full$summary.fixed$sd,
+  lci=out.full$summary.fixed$`0.025quant`,
+  uci=out.full$summary.fixed$`0.975quant`)
+# write to table
+tab_df(posterior.est.df,title=c("Posterior of Fixed Effects"),
+       alternate.rows=T)
+
+webshot("./data/posterior.html", "./data/posterior.png")
+```
+
+
+```{r}
+# make map of regression coefficients
+
+
+
+f.trend.pop.dist.prop.m.dist.time.int.min.cv.fd.temp.int.time.temp.nsamp.int.year <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + idtime + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + scale(dist.to.epi) * scale(idtime) + scale(min.cv.fd) + f(scale(temp),idtime2, model="ar1", constr=TRUE) + scale(temp)
+```
+```{r}
+# top model
+f.top.check.time <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + f(as.factor(idtime2), scale(dist.to.epi),model="ar1", constr=TRUE) + scale(nPos.t) + scale(nPos.t)*scale(temp)
+
+out.top.check.time<-inla(f.top.check.time, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))))
+# add to df
+l <- out.top.check.time$summary.random$'as.factor(idtime3)'
+l <- data.frame(mean=l$mean , lcl=l$'0.025quant', ucl=l$'0.975quant', year=unique(WIDat$year))
+# plot
+ggplot(l) +
+geom_line(data=l, aes(x=year,y=mean)) +
+geom_ribbon(data=l, aes(x=year, ymin=lcl, ymax=ucl), fill="gray70", alpha = 0.5) +
+ggtitle("Deviation from Average Coefficient for Number of Days \n
+        Below -17.7C By Year") +
+xlab("Year") + 
+ylab("Effect") +
+  theme(plot.title = element_text(hjust=0.5))
+
+# add to df
+l <- out.top.check.time$summary.random$'as.factor(idtime2)'
+l <- data.frame(mean=l$mean , lcl=l$'0.025quant', ucl=l$'0.975quant', year=unique(WIDat$year))
+# plot
+ggplot(l) +
+geom_line(data=l, aes(x=year,y=mean)) +
+geom_ribbon(data=l, aes(x=year, ymin=lcl, ymax=ucl), fill="gray70", alpha = 0.5) +
+ggtitle("Deviation from Average Coefficient for Distance to Epicenter
+        By Year") +
+xlab("Year") + 
+ylab("Effect") +
+   theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r want a graph that shows the spatial pattern of testing}
+library(tidyr)
+library(gtable)
+library(gridExtra)
+library(ggpubr)
+year.samp.change <- WIDat %>% group_by(year,uid) %>% summarise(numSamp = sum(nSamp,na.rm=T)) %>% as.data.frame() %>% pivot_wider(id_cols = uid, values_from = numSamp, names_from=year, values_fill=0) %>% arrange(uid)
+year.samp.change <- data.frame(year.samp.change)
+wiStudyShp <- wiStudyShp %>% arrange(uid)
+wiStudyShp2 <- wiStudyShp
+years <- unique(WIDat$year)
+# loop thru
+
+wiStudyShp2$X2008 <- year.samp.change$X2008
+wiStudyShp2$X2009 <- year.samp.change$X2008
+wiStudyShp2$X2010 <- year.samp.change$X2010
+wiStudyShp2$X2011 <- year.samp.change$X2011
+wiStudyShp2$X2012 <- year.samp.change$X2012
+wiStudyShp2$X2013 <- year.samp.change$X2013
+wiStudyShp2$X2014 <- year.samp.change$X2014
+wiStudyShp2$X2015 <- year.samp.change$X2015
+wiStudyShp2$X2016 <- year.samp.change$X2016
+wiStudyShp2$X2017 <- year.samp.change$X2017
+wiStudyShp2$X2018 <- year.samp.change$X2018
+wiStudyShp2$X2019 <- year.samp.change$X2019
+wiStudyShp2$X2020 <- year.samp.change$X2020
+wiStudyShp2$X2021 <- year.samp.change$X2021
+wiStudyShp2$X2022 <- year.samp.change$X2022
+
+years <- unique(WIDat$year)
+
+sampplot2008 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$X2008)) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)])))+
+  ggtitle(label="2008") +
+  labs(legend.title = "Number of Samgples") +
+  theme_void() +
+  theme(legend.title=element_blank())
+
+sampplot2009 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$X2009)) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)])))+
+  ggtitle(label="2009") +
+  theme_void()
+
+sampplot2010 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$X2010)) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)])))+
+  ggtitle(label="2010") +
+  theme_void()
+
+sampplot2011 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$X2011)) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)])))+
+  ggtitle(label="2011") +
+  theme_void()
+
+sampplot2012 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$X2012)) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)])))+
+  ggtitle(label="2012") +
+  theme_void()
+
+sampplot2013 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$'X2013')) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)])))+
+  ggtitle(label="2013") +
+  theme_void()
+
+sampplot2014 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$'X2014')) + 
+  scale_fill_gradient2() +
+  ggtitle(label="2014") +
+  theme_void()
+
+sampplot2015 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$'X2015')) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)])))+
+  ggtitle(label="2015") +
+  theme_void()
+
+sampplot2016 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$X2016)) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)])))+
+  ggtitle(label="2016") +
+  theme_void()
+
+sampplot2017 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$X2017)) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)]))) +
+  ggtitle(label="2017") +
+  theme_void()
+
+sampplot2018 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$X2018)) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)]))) +
+  ggtitle(label="2018") +
+  theme_void()
+
+sampplot2019 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$X2019)) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)])))+
+  ggtitle(label="2019") +
+  theme_void()
+
+sampplot2020 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$X2020)) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)])))+
+  ggtitle(label="2020") +
+  theme_void()
+
+sampplot2021 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$X2021)) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)])))+
+  ggtitle(label="2021") +
+  theme_void()
+
+sampplot2022 <- ggplot() + 
+  geom_sf(data=wiStudyShp2) +
+  geom_sf(data=wiStudyShp2, aes(fill=wiStudyShp2$X2022)) + 
+  scale_fill_gradient2(limits=c(0,max(year.samp.change[,2:ncol(year.samp.change)])))+
+  ggtitle(label="2022") +
+  theme_void()
+
+title <- ggdraw() + draw_label("Total Cases (2008-2022)", fontface='bold')
+plot.grid<-plot_grid(sampplot2013,sampplot2014)
+plot_grid(title,plot.grid)
+X11()
+grid <- ggarrange(sampplot2008,sampplot2009,sampplot2010,
+             sampplot2011,sampplot2012,sampplot2013,
+             sampplot2014,sampplot2015,sampplot2016,
+             sampplot2017,sampplot2018,sampplot2019,
+             sampplot2020,sampplot2021,sampplot2022, common.legend = TRUE,
+             legend="bottom",
+             align="hv")
+grid<-annotate_figure(grid, top=text_grob("Sampling Effort By Year"))
+ggsave("./data/sampplot.png", grid)
+```
+
+```{r check space}
+f.top.check.space <- nPos ~ 1 + offset(log(nSamp + 1)) + f(idarea, model = "bym2", graph = g, scale.model=TRUE,constr = !FALSE, hyper = list(theta1 = list(prior = "pc.prec", param = c(1,0.01)), theta2=list("pc.prec", c(0.5,0.5)))) + f(idtime4, model = "rw1", constr = !FALSE,hyper = list(theta = list(prior="pc.prec", param=c(0.5,0.01)))) + scale(pop.l) + scale(dist.to.epi) + scale(prop.M) + f(as.factor(idtime2), scale(dist.to.epi),model="ar1", constr=TRUE) + scale(temp2) + f(idarea2, scale(temp),model="ar1", constr=TRUE)
+
+out.top.check.space<-inla(f.top.check.space, family=c("zeroinflatednbinomial1"), data=WIDat, control.compute=list(dic=TRUE,waic=TRUE,config=TRUE), control.predictor=list(link=1, hyper=list(theta=list(prior="pc.prec", param=c(1,0.01)))), verbose=TRUE)
+
+wiStudyShp$spat <- out.top.check.space$summary.random$idarea2$mean
+# add to df
+ggplot() + 
+  geom_sf(data=wiStudyShp) +
+  geom_sf(data=wiStudyShp, aes(fill=wiStudyShp$spat)) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+           panel.background = element_blank(), axis.line = element_line(colour = "black"),
+            legend.title = element_blank()) +
+  ggtitle(label="Expected 150 Days No Snow Cover Lower Credible Interval") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
